@@ -92,10 +92,14 @@ final class StatusBarController {
         }
 
         // ── Drop-down items ────────────────────────────
-        miCurrent.title  = "Current: \(s.currentKelvin) K"
+        let currentBrtPct = Int((s.currentBrightness * 100).rounded())
+        let dayBrtPct = Int((s.dayBrightness * 100).rounded())
+        let nightBrtPct = Int((s.nightBrightness * 100).rounded())
+
+        miCurrent.title  = "Current: \(s.currentKelvin) K  ·  \(currentBrtPct)%"
         miPhase.title    = phaseLabel(s.phase)
-        miDay.title      = "☀  Day:   \(s.dayKelvin) K"
-        miNight.title    = "☾  Night: \(s.nightKelvin) K"
+        miDay.title      = "☀  Day:   \(s.dayKelvin) K  ·  \(dayBrtPct)%"
+        miNight.title    = "☾  Night: \(s.nightKelvin) K  ·  \(nightBrtPct)%"
         miSchedule.title = scheduleLabel(s)
         miEnabled.state  = s.enabled ? .on : .off
     }
