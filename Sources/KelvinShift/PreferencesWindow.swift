@@ -12,7 +12,7 @@ final class PreferencesWindowController: NSWindowController {
         let win = NSWindow(contentViewController: hc)
         win.title = "KelvinShift Preferences"
         win.styleMask = [.titled, .closable]
-        win.setContentSize(NSSize(width: 460, height: 520))
+        win.setContentSize(NSSize(width: 460, height: 560))
         win.center()
         win.isReleasedWhenClosed = false
         self.init(window: win)
@@ -144,7 +144,7 @@ struct PreferencesView: View {
             Spacer()
         }
         .padding()
-        .frame(width: 460, height: 520)
+        .frame(width: 460, height: 560)
         // Observe Kelvin changes to drive preview while slider is held
         .onChange(of: s.dayKelvin) { newVal in
             if previewingSlider == "day" {
