@@ -2,6 +2,8 @@
 
 **Accurate Kelvin-based color temperature scheduling for macOS using direct gamma control.**
 
+This was made for my own personal use and needs, hence the lack of notorization. I figured I'd share it with no support or warranty implied.
+
 KelvinShift lets you specify **exact Kelvin values** for daytime and nighttime display color temperatures, with automatic scheduling and smooth transitions. Unlike other tools that use Night Shift's arbitrary "warmth" slider, KelvinShift uses scientifically accurate blackbody radiation values to set precise color temperatures via CoreGraphics gamma tables.
 
 ## Quick Start
