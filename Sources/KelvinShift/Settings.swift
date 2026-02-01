@@ -45,6 +45,9 @@ final class Settings: ObservableObject {
     @Published var longitude: Double {
         didSet { save("ks_lon", longitude) }
     }
+    @Published var locationName: String {
+        didSet { save("ks_locName", locationName) }
+    }
 
     // ── Transition ─────────────────────────────────────────
 
@@ -89,6 +92,7 @@ final class Settings: ObservableObject {
         customNightMinute = d.object(forKey: "ks_cnM")        as? Int    ?? 0
         latitude          = d.object(forKey: "ks_lat")        as? Double ?? 0.0
         longitude         = d.object(forKey: "ks_lon")        as? Double ?? 0.0
+        locationName      = d.string(forKey: "ks_locName")               ?? ""
         transitionMinutes = d.object(forKey: "ks_transMins")  as? Int    ?? 20
         enabled           = d.object(forKey: "ks_enabled")    as? Bool   ?? true
 

@@ -85,6 +85,15 @@ struct PreferencesView: View {
                             }
                             .disabled(locationManager.isLocating)
                         }
+                        if !s.locationName.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "mappin.circle.fill")
+                                    .foregroundColor(.secondary)
+                                Text(s.locationName)
+                                    .foregroundColor(.secondary)
+                            }
+                            .font(.caption)
+                        }
                         if let error = locationManager.error {
                             Text(error)
                                 .font(.caption).foregroundColor(.red)
@@ -262,10 +271,11 @@ struct PreferencesView: View {
     // MARK: - Location
 
     private func requestLocation() {
-        locationManager.requestLocation { location in
+        locationManager.requestLocation { location, name in
             if let loc = location {
                 s.latitude = loc.coordinate.latitude
                 s.longitude = loc.coordinate.longitude
+                s.locationName = name ?? ""
             }
         }
     }
