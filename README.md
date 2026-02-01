@@ -70,8 +70,7 @@ LocationManager.swift      CoreLocation wrapper for detecting user location
 |---|---|---|
 | Day Kelvin | 5000 K | Slightly warm daylight |
 | Night Kelvin | 2700 K | Warm incandescent |
-| Schedule | Solar | Uses NOAA algorithm |
-| Location | 41.10, −74.01 | Nanuet, NY |
+| Schedule | Custom | Set your own day/night times |
 | Transition | 20 minutes | Smooth Hermite ramp |
 
 ## Preferences

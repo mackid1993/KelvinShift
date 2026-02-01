@@ -82,13 +82,13 @@ final class Settings: ObservableObject {
 
         dayKelvin         = d.object(forKey: "ks_dayK")       as? Int    ?? 5000
         nightKelvin       = d.object(forKey: "ks_nightK")     as? Int    ?? 2700
-        scheduleMode      = d.string(forKey: "ks_schedMode")             ?? "solar"
+        scheduleMode      = d.string(forKey: "ks_schedMode")             ?? "custom"
         customDayHour     = d.object(forKey: "ks_cdH")        as? Int    ?? 7
         customDayMinute   = d.object(forKey: "ks_cdM")        as? Int    ?? 0
         customNightHour   = d.object(forKey: "ks_cnH")        as? Int    ?? 20
         customNightMinute = d.object(forKey: "ks_cnM")        as? Int    ?? 0
-        latitude          = d.object(forKey: "ks_lat")        as? Double ?? 41.10
-        longitude         = d.object(forKey: "ks_lon")        as? Double ?? -74.01
+        latitude          = d.object(forKey: "ks_lat")        as? Double ?? 0.0
+        longitude         = d.object(forKey: "ks_lon")        as? Double ?? 0.0
         transitionMinutes = d.object(forKey: "ks_transMins")  as? Int    ?? 20
         enabled           = d.object(forKey: "ks_enabled")    as? Bool   ?? true
 
