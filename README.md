@@ -4,17 +4,6 @@
 
 KelvinShift lets you specify **exact Kelvin values** for daytime and nighttime display color temperatures, with automatic scheduling and smooth transitions. Unlike other tools that use Night Shift's arbitrary "warmth" slider, KelvinShift uses scientifically accurate blackbody radiation values to set precise color temperatures via CoreGraphics gamma tables.
 
-## What It Does
-
-| Feature | Night Shift / f.lux | KelvinShift |
-|---|---|---|
-| Color accuracy | Approximated warmth slider | **Accurate blackbody RGB values** |
-| Temperature range | Unknown / estimated | **1000K – 10000K (calibrated)** |
-| Separate day vs night | Limited | **e.g. 5000K day / 2700K night** |
-| Live temperature display | No | **Shows current K in menu bar** |
-| Smooth transitions | Abrupt or basic | **Any duration, Hermite curve** |
-| Solar calculation | Basic | **Full NOAA algorithm** |
-
 ## Quick Start
 
 ```bash
