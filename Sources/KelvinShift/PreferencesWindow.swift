@@ -109,7 +109,7 @@ struct PreferencesView: View {
                         }
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
