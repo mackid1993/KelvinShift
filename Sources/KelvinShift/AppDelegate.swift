@@ -3,7 +3,6 @@
 import AppKit
 
 class AppDelegate: NSObject, NSApplicationDelegate {
-    private var bridge: NightShiftBridge?
     private var engine: ScheduleEngine?
     private var statusBar: StatusBarController?
 
@@ -11,23 +10,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide from Dock — menu bar only
         NSApp.setActivationPolicy(.accessory)
 
-        guard let bridge = NightShiftBridge() else {
-            let alert = NSAlert()
-            alert.messageText = "KelvinShift Error"
-            alert.informativeText = """
-                Could not load the CoreBrightness framework. \
-                Night Shift may not be supported on this Mac, \
-                or macOS has restricted access to the private API.
-                """
-            alert.alertStyle = .critical
-            alert.addButton(withTitle: "Quit")
-            alert.runModal()
-            NSApp.terminate(nil)
-            return
-        }
-
-        self.bridge = bridge
-        let engine = ScheduleEngine(bridge: bridge)
+        let engine = ScheduleEngine()
         self.engine = engine
         self.statusBar = StatusBarController(engine: engine)
         engine.start()

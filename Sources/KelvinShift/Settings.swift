@@ -70,13 +70,6 @@ final class Settings: ObservableObject {
     /// Whether the OS actually supports SMAppService (macOS 13+).
     let loginItemSupported: Bool
 
-    // ── Calibration ────────────────────────────────────────
-
-    @Published var calibrationMinK: Int {
-        didSet { let v = clamp(calibrationMinK, 1200, 3500); if calibrationMinK != v { calibrationMinK = v; return }
-            save("ks_calMinK", v); NightShiftBridge.minKelvin = Double(v) }
-    }
-
     // ── Init ───────────────────────────────────────────────
 
     private init() {
@@ -98,16 +91,29 @@ final class Settings: ObservableObject {
         longitude         = d.object(forKey: "ks_lon")        as? Double ?? -74.01
         transitionMinutes = d.object(forKey: "ks_transMins")  as? Int    ?? 20
         enabled           = d.object(forKey: "ks_enabled")    as? Bool   ?? true
-        calibrationMinK   = d.object(forKey: "ks_calMinK")    as? Int    ?? 1900
 
-        // Sync launchAtLogin with the actual system state if supported
+        // Sync launchAtLogin: prefer user's saved preference, re-register if needed
         if #available(macOS 13.0, *) {
-            launchAtLogin = SMAppService.mainApp.status == .enabled
+            let savedPref = d.object(forKey: "ks_launchAtLogin") as? Bool
+            let systemState = SMAppService.mainApp.status == .enabled
+
+            if let pref = savedPref {
+                // User has a saved preference — use it and ensure system matches
+                launchAtLogin = pref
+                if pref && !systemState {
+                    // Plist was deleted or login item was removed — re-register
+                    try? SMAppService.mainApp.register()
+                } else if !pref && systemState {
+                    // Somehow enabled when user wanted it off — unregister
+                    try? SMAppService.mainApp.unregister()
+                }
+            } else {
+                // No saved preference — sync from system state
+                launchAtLogin = systemState
+            }
         } else {
             launchAtLogin = d.object(forKey: "ks_launchAtLogin") as? Bool ?? false
         }
-
-        NightShiftBridge.minKelvin = Double(calibrationMinK)
     }
 
     // ── Launch at Login ────────────────────────────────────

@@ -3,7 +3,7 @@
 // Runs a 15-second timer that:
 //   1. Determines the current phase (day / night / transitioning).
 //   2. Calculates the target Kelvin for this instant.
-//   3. Applies it to Night Shift via the bridge.
+//   3. Applies it via direct gamma table manipulation.
 //   4. Publishes state for the status-bar UI.
 //
 // Also supports a "preview" mode where an external caller (the Preferences
@@ -37,7 +37,7 @@ final class ScheduleEngine {
     /// Convenient shared reference so PreferencesView can call preview methods.
     static weak var current: ScheduleEngine?
 
-    private let bridge: NightShiftBridge
+    private let gamma = GammaController.shared
     private let settings = Settings.shared
     private var timer: Timer?
 
@@ -46,33 +46,53 @@ final class ScheduleEngine {
     // MARK: – Preview
 
     /// When non-nil, the engine skips applying its scheduled Kelvin;
-    /// the preview value is applied directly to Night Shift instead.
+    /// the preview value is applied directly instead.
     private var previewKelvin: Int?
 
     /// Called when the user begins dragging a Kelvin slider.
     func startPreview(_ kelvin: Int) {
         previewKelvin = kelvin
-        bridge.applyKelvin(kelvin)
+        gamma.applyKelvin(kelvin)
     }
 
     /// Called on every slider value change while dragging.
     func updatePreview(_ kelvin: Int) {
         guard previewKelvin != nil else { return }
         previewKelvin = kelvin
-        bridge.applyKelvin(kelvin)
+        gamma.applyKelvin(kelvin)
     }
 
     /// Called when the user releases the slider. The engine immediately
     /// re-applies the schedule's correct Kelvin.
     func stopPreview() {
         previewKelvin = nil
-        tick()
+        // Force immediate tick to restore scheduled temperature
+        let now = Date()
+        let (dayMin, nightMin, _, _) = scheduleTimes(for: now)
+        let nowMin = minutesFromMidnight(now)
+        let tranMin = settings.transitionMinutes
+        let nightTransStart = wrap(nightMin - tranMin)
+        let dayTransStart = wrap(dayMin - tranMin)
+
+        let kelvin: Int
+        if inRange(nowMin, from: dayMin, to: nightTransStart) {
+            kelvin = settings.dayKelvin
+        } else if inRange(nowMin, from: nightTransStart, to: nightMin) {
+            let p = progress(nowMin, from: nightTransStart, length: tranMin)
+            kelvin = lerp(settings.dayKelvin, settings.nightKelvin, p)
+        } else if inRange(nowMin, from: nightMin, to: dayTransStart) {
+            kelvin = settings.nightKelvin
+        } else {
+            let p = progress(nowMin, from: dayTransStart, length: tranMin)
+            kelvin = lerp(settings.nightKelvin, settings.dayKelvin, p)
+        }
+
+        gamma.applyKelvin(kelvin)
     }
 
     // MARK: – Init
 
-    init(bridge: NightShiftBridge) {
-        self.bridge = bridge
+    init() {
         self.state = ScheduleState(
             phase: .day, currentKelvin: 6500,
             dayKelvin: 5000, nightKelvin: 2700,
@@ -88,9 +108,6 @@ final class ScheduleEngine {
     }
 
     func start() {
-        bridge.setEnabled(true)
-        bridge.setMode(0)          // disable NS's own schedule
-
         tick()                     // apply immediately
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
             self?.tick()
@@ -101,7 +118,7 @@ final class ScheduleEngine {
     func stop() {
         timer?.invalidate()
         timer = nil
-        bridge.setStrength(0)
+        gamma.resetGamma()
     }
 
     // MARK: – Timer callback
@@ -115,12 +132,10 @@ final class ScheduleEngine {
         guard previewKelvin == nil else { return }
 
         guard settings.enabled else {
-            bridge.setStrength(0)
+            gamma.resetGamma()
             publish(.day, kelvin: 6500, sunrise: nil, sunset: nil, next: nil, enabled: false)
             return
         }
-
-        bridge.setEnabled(true)
 
         let now = Date()
         let (dayMin, nightMin, sunrise, sunset) = scheduleTimes(for: now)
@@ -157,7 +172,7 @@ final class ScheduleEngine {
             next   = todayAt(dayMin, relativeTo: now)
         }
 
-        bridge.applyKelvin(kelvin)
+        gamma.applyKelvin(kelvin)
         publish(phase, kelvin: kelvin, sunrise: sunrise, sunset: sunset, next: next, enabled: true)
     }
 

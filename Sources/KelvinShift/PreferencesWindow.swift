@@ -12,7 +12,7 @@ final class PreferencesWindowController: NSWindowController {
         let win = NSWindow(contentViewController: hc)
         win.title = "KelvinShift Preferences"
         win.styleMask = [.titled, .closable]
-        win.setContentSize(NSSize(width: 460, height: 560))
+        win.setContentSize(NSSize(width: 460, height: 520))
         win.center()
         win.isReleasedWhenClosed = false
         self.init(window: win)
@@ -23,10 +23,10 @@ final class PreferencesWindowController: NSWindowController {
 
 struct PreferencesView: View {
     @ObservedObject private var s = Settings.shared
-    @State private var showCalibration = false
-
     /// Tracks which slider is currently being dragged: "day", "night", or nil.
     @State private var previewingSlider: String? = nil
+    @GestureState private var isDaySliderPressed = false
+    @GestureState private var isNightSliderPressed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -42,14 +42,13 @@ struct PreferencesView: View {
                     Text("Recommended 2200–3000 K for nighttime use")
                         .font(.caption).foregroundColor(.secondary)
 
-                    if previewingSlider != nil {
-                        HStack(spacing: 4) {
-                            Image(systemName: "eye.fill")
-                            Text("Previewing on display — release slider to return to schedule")
-                        }
-                        .font(.caption)
-                        .foregroundColor(.orange)
+                    HStack(spacing: 4) {
+                        Image(systemName: "eye.fill")
+                        Text("Previewing on display — release slider to return to schedule")
                     }
+                    .font(.caption)
+                    .foregroundColor(.orange)
+                    .opacity(previewingSlider != nil ? 1 : 0)
                 }
                 .padding(.vertical, 4)
             }
@@ -118,33 +117,10 @@ struct PreferencesView: View {
                 .padding(.vertical, 4)
             }
 
-            // ── Calibration ────────────────────────────
-            DisclosureGroup("Advanced Calibration", isExpanded: $showCalibration) {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        Text("NS max-warmth ≈")
-                        TextField("", value: $s.calibrationMinK, format: .number)
-                            .frame(width: 60)
-                        Text("K")
-                        Stepper("", value: $s.calibrationMinK, in: 1200...3500, step: 100)
-                            .labelsHidden()
-                    }
-                    Text("""
-                        What Kelvin value does Night Shift strength 1.0 correspond to \
-                        on your display? Default 1900 K. Use a colorimeter to measure \
-                        if you want higher accuracy. Raise this value (e.g. 2700) if \
-                        your display clips before reaching true 1900 K.
-                        """)
-                        .font(.caption).foregroundColor(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(.top, 4)
-            }
-
             Spacer()
         }
         .padding()
-        .frame(width: 460, height: 560)
+        .frame(width: 460, height: 520)
         // Observe Kelvin changes to drive preview while slider is held
         .onChange(of: s.dayKelvin) { newVal in
             if previewingSlider == "day" {
@@ -168,16 +144,22 @@ struct PreferencesView: View {
             Text("K")
             Stepper("", value: $s.dayKelvin, in: 2000...6500, step: 100).labelsHidden()
             Slider(value: dayKelvinDouble,
-                   in: 2000...6500, step: 100,
-                   onEditingChanged: { editing in
-                        if editing {
-                            previewingSlider = "day"
-                            ScheduleEngine.current?.startPreview(s.dayKelvin)
-                        } else {
-                            previewingSlider = nil
-                            ScheduleEngine.current?.stopPreview()
+                   in: 2000...6500, step: 100)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .updating($isDaySliderPressed) { _, state, _ in
+                            state = true
                         }
-                   })
+                )
+                .onChange(of: isDaySliderPressed) { pressed in
+                    if pressed {
+                        previewingSlider = "day"
+                        ScheduleEngine.current?.startPreview(s.dayKelvin)
+                    } else {
+                        previewingSlider = nil
+                        ScheduleEngine.current?.stopPreview()
+                    }
+                }
         }
     }
 
@@ -189,16 +171,22 @@ struct PreferencesView: View {
             Text("K")
             Stepper("", value: $s.nightKelvin, in: 1800...5500, step: 100).labelsHidden()
             Slider(value: nightKelvinDouble,
-                   in: 1800...5500, step: 100,
-                   onEditingChanged: { editing in
-                        if editing {
-                            previewingSlider = "night"
-                            ScheduleEngine.current?.startPreview(s.nightKelvin)
-                        } else {
-                            previewingSlider = nil
-                            ScheduleEngine.current?.stopPreview()
+                   in: 1800...5500, step: 100)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .updating($isNightSliderPressed) { _, state, _ in
+                            state = true
                         }
-                   })
+                )
+                .onChange(of: isNightSliderPressed) { pressed in
+                    if pressed {
+                        previewingSlider = "night"
+                        ScheduleEngine.current?.startPreview(s.nightKelvin)
+                    } else {
+                        previewingSlider = nil
+                        ScheduleEngine.current?.stopPreview()
+                    }
+                }
         }
     }
 
@@ -214,19 +202,22 @@ struct PreferencesView: View {
 
     @ViewBuilder
     private func hourPicker(_ hour: Binding<Int>, _ minute: Binding<Int>) -> some View {
-        HStack(spacing: 2) {
-            Picker("", selection: hour) {
-                ForEach(0..<24, id: \.self) { h in Text(h12(h)).tag(h) }
+        let dateBinding = Binding<Date>(
+            get: {
+                var components = DateComponents()
+                components.hour = hour.wrappedValue
+                components.minute = minute.wrappedValue
+                return Calendar.current.date(from: components) ?? Date()
+            },
+            set: { newDate in
+                let components = Calendar.current.dateComponents([.hour, .minute], from: newDate)
+                hour.wrappedValue = components.hour ?? 0
+                minute.wrappedValue = components.minute ?? 0
             }
-            .frame(width: 80).labelsHidden()
-
-            Picker("", selection: minute) {
-                ForEach([0, 15, 30, 45], id: \.self) { m in
-                    Text(String(format: ":%02d", m)).tag(m)
-                }
-            }
-            .frame(width: 52).labelsHidden()
-        }
+        )
+        DatePicker("", selection: dateBinding, displayedComponents: .hourAndMinute)
+            .labelsHidden()
+            .frame(width: 100)
     }
 
     // MARK: – Binding adapters
