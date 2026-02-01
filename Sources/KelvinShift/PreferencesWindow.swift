@@ -12,7 +12,7 @@ final class PreferencesWindowController: NSWindowController {
         let win = NSWindow(contentViewController: hc)
         win.title = "KelvinShift Preferences"
         win.styleMask = [.titled, .closable]
-        win.setContentSize(NSSize(width: 460, height: 600))
+        win.setContentSize(NSSize(width: 460, height: 880))
         win.center()
         win.isReleasedWhenClosed = false
         self.init(window: win)
@@ -24,10 +24,16 @@ final class PreferencesWindowController: NSWindowController {
 struct PreferencesView: View {
     @ObservedObject private var s = Settings.shared
     @ObservedObject private var locationManager = LocationManager.shared
-    /// Tracks which slider is currently being dragged: "day", "night", or nil.
+    /// Tracks which slider is currently being dragged: "day", "night", "dayBrt", "nightBrt", or nil.
     @State private var previewingSlider: String? = nil
     @GestureState private var isDaySliderPressed = false
     @GestureState private var isNightSliderPressed = false
+    @GestureState private var isDayBrtSliderPressed = false
+    @GestureState private var isNightBrtSliderPressed = false
+
+    /// State for the transition demo
+    @State private var isDemoRunning = false
+    @State private var demoProgress: Double = 0.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -43,13 +49,21 @@ struct PreferencesView: View {
                     Text("Recommended 2200–3000 K for nighttime use")
                         .font(.caption).foregroundColor(.secondary)
 
-                    HStack(spacing: 4) {
-                        Image(systemName: "eye.fill")
-                        Text("Previewing on display — release slider to return to schedule")
-                    }
-                    .font(.caption)
-                    .foregroundColor(.orange)
-                    .opacity(previewingSlider != nil ? 1 : 0)
+                    previewingIndicator
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // ── Brightness ────────────────────────────────
+            GroupBox(label: Label("Brightness", systemImage: "sun.max")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    dayBrightnessRow
+                    nightBrightnessRow
+                    Text("Dims the screen via gamma — does not affect backlight")
+                        .font(.caption).foregroundColor(.secondary)
+
+                    previewingIndicator
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -124,6 +138,28 @@ struct PreferencesView: View {
                     }
                     Text("Duration of the smooth ramp between day and night temperatures")
                         .font(.caption).foregroundColor(.secondary)
+
+                    Divider()
+
+                    HStack {
+                        Button(action: toggleDemo) {
+                            Label(isDemoRunning ? "Stop" : "Preview Cycle",
+                                  systemImage: isDemoRunning ? "stop.fill" : "play.fill")
+                        }
+                        .disabled(previewingSlider != nil)
+
+                        if isDemoRunning {
+                            ProgressView(value: demoProgress)
+                                .progressViewStyle(.linear)
+                            Text("\(Int(demoProgress * 100))%")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .frame(width: 35, alignment: .trailing)
+                        }
+                    }
+
+                    Text("Runs through a full day/night cycle in 10 seconds")
+                        .font(.caption).foregroundColor(.secondary)
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -146,7 +182,7 @@ struct PreferencesView: View {
             Spacer()
         }
         .padding()
-        .frame(width: 460, height: 600)
+        .frame(width: 460, height: 880)
         // Observe Kelvin changes to drive preview while slider is held
         .onChange(of: s.dayKelvin) { newVal in
             if previewingSlider == "day" {
@@ -156,6 +192,16 @@ struct PreferencesView: View {
         .onChange(of: s.nightKelvin) { newVal in
             if previewingSlider == "night" {
                 ScheduleEngine.current?.updatePreview(newVal)
+            }
+        }
+        .onChange(of: s.dayBrightness) { newVal in
+            if previewingSlider == "dayBrt" {
+                ScheduleEngine.current?.updateBrightnessPreview(newVal)
+            }
+        }
+        .onChange(of: s.nightBrightness) { newVal in
+            if previewingSlider == "nightBrt" {
+                ScheduleEngine.current?.updateBrightnessPreview(newVal)
             }
         }
     }
@@ -216,6 +262,68 @@ struct PreferencesView: View {
         }
     }
 
+    private var dayBrightnessRow: some View {
+        HStack {
+            Text("Day:").frame(width: 46, alignment: .trailing)
+            TextField("", value: dayBrightnessPercent, format: .number)
+                .frame(width: 60)
+            Text("%")
+            Stepper("", value: $s.dayBrightness, in: 0.1...1.0, step: 0.05).labelsHidden()
+            Slider(value: $s.dayBrightness, in: 0.1...1.0, step: 0.05)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .updating($isDayBrtSliderPressed) { _, state, _ in
+                            state = true
+                        }
+                )
+                .onChange(of: isDayBrtSliderPressed) { pressed in
+                    if pressed {
+                        previewingSlider = "dayBrt"
+                        ScheduleEngine.current?.startBrightnessPreview(s.dayBrightness)
+                    } else {
+                        previewingSlider = nil
+                        ScheduleEngine.current?.stopPreview()
+                    }
+                }
+        }
+    }
+
+    private var nightBrightnessRow: some View {
+        HStack {
+            Text("Night:").frame(width: 46, alignment: .trailing)
+            TextField("", value: nightBrightnessPercent, format: .number)
+                .frame(width: 60)
+            Text("%")
+            Stepper("", value: $s.nightBrightness, in: 0.1...1.0, step: 0.05).labelsHidden()
+            Slider(value: $s.nightBrightness, in: 0.1...1.0, step: 0.05)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .updating($isNightBrtSliderPressed) { _, state, _ in
+                            state = true
+                        }
+                )
+                .onChange(of: isNightBrtSliderPressed) { pressed in
+                    if pressed {
+                        previewingSlider = "nightBrt"
+                        ScheduleEngine.current?.startBrightnessPreview(s.nightBrightness)
+                    } else {
+                        previewingSlider = nil
+                        ScheduleEngine.current?.stopPreview()
+                    }
+                }
+        }
+    }
+
+    private var previewingIndicator: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "eye.fill")
+            Text("Previewing on display — release slider to return to schedule")
+        }
+        .font(.caption)
+        .foregroundColor(.orange)
+        .opacity(previewingSlider != nil ? 1 : 0)
+    }
+
     // MARK: – Sub-views
 
     @ViewBuilder
@@ -263,6 +371,16 @@ struct PreferencesView: View {
                 set: { s.nightKelvin = Int($0) })
     }
 
+    private var dayBrightnessPercent: Binding<Int> {
+        Binding(get: { Int((s.dayBrightness * 100).rounded()) },
+                set: { s.dayBrightness = max(0.1, min(1.0, Double($0) / 100.0)) })
+    }
+
+    private var nightBrightnessPercent: Binding<Int> {
+        Binding(get: { Int((s.nightBrightness * 100).rounded()) },
+                set: { s.nightBrightness = max(0.1, min(1.0, Double($0) / 100.0)) })
+    }
+
     private func h12(_ h: Int) -> String {
         if h == 0  { return "12 AM" }
         if h < 12  { return "\(h) AM" }
@@ -279,6 +397,27 @@ struct PreferencesView: View {
                 s.longitude = loc.coordinate.longitude
                 s.locationName = name ?? ""
             }
+        }
+    }
+
+    // MARK: - Transition Demo
+
+    private func toggleDemo() {
+        if isDemoRunning {
+            ScheduleEngine.current?.stopDemo()
+            isDemoRunning = false
+            demoProgress = 0.0
+        } else {
+            ScheduleEngine.current?.onDemoProgressChanged = { progress in
+                DispatchQueue.main.async {
+                    self.demoProgress = progress
+                    if progress >= 1.0 || progress == 0.0 {
+                        self.isDemoRunning = ScheduleEngine.current?.isDemoRunning ?? false
+                    }
+                }
+            }
+            ScheduleEngine.current?.startDemo(durationSeconds: 10.0)
+            isDemoRunning = true
         }
     }
 }

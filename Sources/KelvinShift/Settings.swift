@@ -19,6 +19,15 @@ final class Settings: ObservableObject {
         didSet { let v = clamp(nightKelvin, 1800, 5500); if nightKelvin != v { nightKelvin = v; return }; save("ks_nightK", v) }
     }
 
+    // ── Brightness ────────────────────────────────────────
+
+    @Published var dayBrightness: Double {
+        didSet { let v = clampD(dayBrightness, 0.1, 1.0); if dayBrightness != v { dayBrightness = v; return }; save("ks_dayBrt", v) }
+    }
+    @Published var nightBrightness: Double {
+        didSet { let v = clampD(nightBrightness, 0.1, 1.0); if nightBrightness != v { nightBrightness = v; return }; save("ks_nightBrt", v) }
+    }
+
     // ── Schedule ───────────────────────────────────────────
 
     @Published var scheduleMode: String {
@@ -85,6 +94,8 @@ final class Settings: ObservableObject {
 
         dayKelvin         = d.object(forKey: "ks_dayK")       as? Int    ?? 5000
         nightKelvin       = d.object(forKey: "ks_nightK")     as? Int    ?? 2700
+        dayBrightness     = d.object(forKey: "ks_dayBrt")     as? Double ?? 1.0
+        nightBrightness   = d.object(forKey: "ks_nightBrt")   as? Double ?? 0.8
         scheduleMode      = d.string(forKey: "ks_schedMode")             ?? "custom"
         customDayHour     = d.object(forKey: "ks_cdH")        as? Int    ?? 7
         customDayMinute   = d.object(forKey: "ks_cdM")        as? Int    ?? 0
@@ -144,6 +155,7 @@ final class Settings: ObservableObject {
     }
 
     private func clamp(_ v: Int, _ lo: Int, _ hi: Int) -> Int { min(max(v, lo), hi) }
+    private func clampD(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(max(v, lo), hi) }
 
     var dayTimeLabel: String   { formatTime(customDayHour, customDayMinute) }
     var nightTimeLabel: String { formatTime(customNightHour, customNightMinute) }

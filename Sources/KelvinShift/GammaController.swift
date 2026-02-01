@@ -112,6 +112,7 @@ final class GammaController {
 
     private var savedGammaRamps: [CGDirectDisplayID: (r: [CGGammaValue], g: [CGGammaValue], b: [CGGammaValue])] = [:]
     private var currentKelvin: Int = 6500
+    private var currentBrightness: Double = 1.0
 
     private init() {
         saveOriginalGamma()
@@ -123,11 +124,22 @@ final class GammaController {
     /// - Parameter kelvin: Color temperature in Kelvin (1000-10000)
     @discardableResult
     func applyKelvin(_ kelvin: Int) -> Bool {
-        let clamped = max(1000, min(10000, kelvin))
-        currentKelvin = clamped
+        return applyKelvinWithBrightness(kelvin, brightness: 1.0)
+    }
 
-        let rgb = Self.kelvinToRGB(clamped)
-        return applyRGBMultipliers(r: rgb.r, g: rgb.g, b: rgb.b)
+    /// Apply a color temperature with brightness adjustment to all displays.
+    /// - Parameters:
+    ///   - kelvin: Color temperature in Kelvin (1000-10000)
+    ///   - brightness: Brightness multiplier (0.1-1.0, where 1.0 is full brightness)
+    @discardableResult
+    func applyKelvinWithBrightness(_ kelvin: Int, brightness: Double) -> Bool {
+        let clampedKelvin = max(1000, min(10000, kelvin))
+        let clampedBrightness = max(0.1, min(1.0, brightness))
+        currentKelvin = clampedKelvin
+        currentBrightness = clampedBrightness
+
+        let rgb = Self.kelvinToRGB(clampedKelvin)
+        return applyRGBMultipliers(r: rgb.r, g: rgb.g, b: rgb.b, brightness: Float(clampedBrightness))
     }
 
     /// Get the current applied color temperature.
@@ -135,9 +147,15 @@ final class GammaController {
         return currentKelvin
     }
 
+    /// Get the current applied brightness.
+    func getCurrentBrightness() -> Double {
+        return currentBrightness
+    }
+
     /// Reset gamma to original values (6500K equivalent).
     func resetGamma() {
         currentKelvin = 6500
+        currentBrightness = 1.0
         CGDisplayRestoreColorSyncSettings()
     }
 
@@ -207,23 +225,23 @@ final class GammaController {
         }
     }
 
-    private func applyRGBMultipliers(r: Float, g: Float, b: Float) -> Bool {
+    private func applyRGBMultipliers(r: Float, g: Float, b: Float, brightness: Float = 1.0) -> Bool {
         var success = true
 
         for displayID in getDisplayIDs() {
             let capacity = CGDisplayGammaTableCapacity(displayID)
             let count = Int(capacity)
 
-            // Create linear ramps scaled by the RGB multipliers
+            // Create linear ramps scaled by the RGB multipliers and brightness
             var redTable = [CGGammaValue](repeating: 0, count: count)
             var greenTable = [CGGammaValue](repeating: 0, count: count)
             var blueTable = [CGGammaValue](repeating: 0, count: count)
 
             for i in 0..<count {
                 let value = CGGammaValue(i) / CGGammaValue(count - 1)
-                redTable[i] = value * CGGammaValue(r)
-                greenTable[i] = value * CGGammaValue(g)
-                blueTable[i] = value * CGGammaValue(b)
+                redTable[i] = value * CGGammaValue(r) * CGGammaValue(brightness)
+                greenTable[i] = value * CGGammaValue(g) * CGGammaValue(brightness)
+                blueTable[i] = value * CGGammaValue(b) * CGGammaValue(brightness)
             }
 
             let result = CGSetDisplayTransferByTable(
