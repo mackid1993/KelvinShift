@@ -12,7 +12,7 @@ KelvinShift lets you specify **exact Kelvin values** for daytime and nighttime d
 | Temperature range | Unknown / estimated | **1000K – 10000K (calibrated)** |
 | Separate day vs night | Limited | **e.g. 5000K day / 2700K night** |
 | Live temperature display | No | **Shows current K in menu bar** |
-| Smooth transitions | Abrupt or basic | **1–60 min Hermite curve** |
+| Smooth transitions | Abrupt or basic | **Any duration, Hermite curve** |
 | Solar calculation | Basic | **Full NOAA algorithm** |
 
 ## Quick Start
@@ -77,8 +77,8 @@ LocationManager.swift      CoreLocation wrapper for detecting user location
 
 - **Color Temperature**: Set day and night Kelvin values (with live preview when adjusting sliders)
 - **Schedule**: Solar (automatic sunrise/sunset) or custom times
-- **Location**: Enter coordinates manually or click "Use Current" to detect via Location Services
-- **Transition**: How long the smooth ramp takes between day and night
+- **Location**: Enter coordinates manually or click "Use Current" to detect via Location Services (displays city/state name)
+- **Transition**: How long the smooth ramp takes between day and night (any duration you want)
 - **Launch at Login**: Auto-start on login (macOS 13+)
 
 ## Troubleshooting
