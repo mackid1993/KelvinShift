@@ -104,4 +104,4 @@ defaults delete com.kelvinshift.app
 
 ## License
 
-MIT
+Mine!
