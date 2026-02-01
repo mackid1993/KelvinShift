@@ -52,7 +52,7 @@ final class Settings: ObservableObject {
     // ── Transition ─────────────────────────────────────────
 
     @Published var transitionMinutes: Int {
-        didSet { let v = clamp(transitionMinutes, 1, 60); if transitionMinutes != v { transitionMinutes = v; return }; save("ks_transMins", v) }
+        didSet { let v = max(transitionMinutes, 1); if transitionMinutes != v { transitionMinutes = v; return }; save("ks_transMins", v) }
     }
 
     // ── Master toggle ──────────────────────────────────────

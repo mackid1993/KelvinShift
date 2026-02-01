@@ -12,7 +12,7 @@ final class PreferencesWindowController: NSWindowController {
         let win = NSWindow(contentViewController: hc)
         win.title = "KelvinShift Preferences"
         win.styleMask = [.titled, .closable]
-        win.setContentSize(NSSize(width: 460, height: 560))
+        win.setContentSize(NSSize(width: 460, height: 600))
         win.center()
         win.isReleasedWhenClosed = false
         self.init(window: win)
@@ -115,15 +115,17 @@ struct PreferencesView: View {
 
             // ── Transition ─────────────────────────────
             GroupBox(label: Label("Transition", systemImage: "arrow.left.arrow.right")) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Slider(value: transitionBinding, in: 1...60, step: 1)
-                        Text("\(s.transitionMinutes) min").monospacedDigit().frame(width: 50)
+                        TextField("", value: $s.transitionMinutes, format: .number)
+                            .frame(width: 60)
+                        Text("minutes")
+                        Stepper("", value: $s.transitionMinutes, in: 1...600, step: 5).labelsHidden()
                     }
                     Text("Duration of the smooth ramp between day and night temperatures")
                         .font(.caption).foregroundColor(.secondary)
                 }
-                .padding(.vertical, 4)
+                .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -137,14 +139,14 @@ struct PreferencesView: View {
                             .font(.caption).foregroundColor(.secondary)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Spacer()
         }
         .padding()
-        .frame(width: 460, height: 560)
+        .frame(width: 460, height: 600)
         // Observe Kelvin changes to drive preview while slider is held
         .onChange(of: s.dayKelvin) { newVal in
             if previewingSlider == "day" {
