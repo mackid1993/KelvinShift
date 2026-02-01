@@ -23,6 +23,7 @@ final class PreferencesWindowController: NSWindowController {
 
 struct PreferencesView: View {
     @ObservedObject private var s = Settings.shared
+    @ObservedObject private var locationManager = LocationManager.shared
     /// Tracks which slider is currently being dragged: "day", "night", or nil.
     @State private var previewingSlider: String? = nil
     @GestureState private var isDaySliderPressed = false
@@ -51,6 +52,7 @@ struct PreferencesView: View {
                     .opacity(previewingSlider != nil ? 1 : 0)
                 }
                 .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // ── Schedule ───────────────────────────────
@@ -74,9 +76,19 @@ struct PreferencesView: View {
                                           format: .number.precision(.fractionLength(4)))
                                     .frame(width: 90)
                             }
+                            Button(action: requestLocation) {
+                                if locationManager.isLocating {
+                                    ProgressIndicator()
+                                } else {
+                                    Label("Use Current", systemImage: "location.fill")
+                                }
+                            }
+                            .disabled(locationManager.isLocating)
                         }
-                        Text("Default: Nanuet, NY  (41.10, −74.01)")
-                            .font(.caption).foregroundColor(.secondary)
+                        if let error = locationManager.error {
+                            Text(error)
+                                .font(.caption).foregroundColor(.red)
+                        }
                     } else {
                         HStack(spacing: 16) {
                             labelled("Day starts") {
@@ -89,6 +101,7 @@ struct PreferencesView: View {
                     }
                 }
                 .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // ── Transition ─────────────────────────────
@@ -102,6 +115,7 @@ struct PreferencesView: View {
                         .font(.caption).foregroundColor(.secondary)
                 }
                 .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // ── General ────────────────────────────────
@@ -115,6 +129,7 @@ struct PreferencesView: View {
                     }
                 }
                 .padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             Spacer()
@@ -243,4 +258,29 @@ struct PreferencesView: View {
         if h == 12 { return "12 PM" }
         return "\(h - 12) PM"
     }
+
+    // MARK: - Location
+
+    private func requestLocation() {
+        locationManager.requestLocation { location in
+            if let loc = location {
+                s.latitude = loc.coordinate.latitude
+                s.longitude = loc.coordinate.longitude
+            }
+        }
+    }
+}
+
+// MARK: - Progress Indicator
+
+struct ProgressIndicator: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSProgressIndicator {
+        let indicator = NSProgressIndicator()
+        indicator.style = .spinning
+        indicator.controlSize = .small
+        indicator.startAnimation(nil)
+        return indicator
+    }
+
+    func updateNSView(_ nsView: NSProgressIndicator, context: Context) {}
 }

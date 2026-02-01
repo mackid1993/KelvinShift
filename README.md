@@ -1,23 +1,24 @@
 # KelvinShift
 
-**Precise Kelvin-based color temperature scheduling for macOS, powered by Night Shift.**
+**Accurate Kelvin-based color temperature scheduling for macOS using direct gamma control.**
 
-KelvinShift fills the gap that no other macOS app does: it lets you specify **exact Kelvin values** for daytime and nighttime display color temperatures, with automatic scheduling and smooth transitions — all by driving the built-in Night Shift engine under the hood.
+KelvinShift lets you specify **exact Kelvin values** for daytime and nighttime display color temperatures, with automatic scheduling and smooth transitions. Unlike other tools that use Night Shift's arbitrary "warmth" slider, KelvinShift uses scientifically accurate blackbody radiation values to set precise color temperatures via CoreGraphics gamma tables.
 
 ## What It Does
 
-| Feature | Night Shift alone | KelvinShift |
+| Feature | Night Shift / f.lux | KelvinShift |
 |---|---|---|
-| Scheduling (sunrise/sunset or custom) | ✓ warmth slider | ✓ **exact Kelvin values** |
-| Separate day vs night targets | ✗ (one warmth level) | ✓ e.g. 5000 K day / 2700 K night |
-| Show current color temperature | ✗ | ✓ live in the menu bar |
-| Smooth transition ramp | Abrupt toggle | Configurable 1–60 min Hermite curve |
-| Custom solar position calculation | Basic sunset/sunrise | Full NOAA algorithm |
+| Color accuracy | Approximated warmth slider | **Accurate blackbody RGB values** |
+| Temperature range | Unknown / estimated | **1000K – 10000K (calibrated)** |
+| Separate day vs night | Limited | **e.g. 5000K day / 2700K night** |
+| Live temperature display | No | **Shows current K in menu bar** |
+| Smooth transitions | Abrupt or basic | **1–60 min Hermite curve** |
+| Solar calculation | Basic | **Full NOAA algorithm** |
 
 ## Quick Start
 
 ```bash
-# 1. Clone or download this folder
+# 1. Clone or download
 cd KelvinShift
 
 # 2. Build
@@ -28,39 +29,40 @@ cp -R KelvinShift.app /Applications/
 open /Applications/KelvinShift.app
 ```
 
-A sun icon (☀ 5000K) appears in your menu bar. Click it for status or to open Preferences.
+A moon icon appears in your menu bar showing the current temperature (e.g. "5000K"). Click it for status or to open Preferences.
 
 ### Requirements
 
 - macOS 12 (Monterey) or later
-- Apple Silicon or Intel Mac that supports Night Shift
 - Xcode Command Line Tools (`xcode-select --install`)
+
+## How It Works
+
+KelvinShift uses **direct gamma table manipulation** via CoreGraphics (`CGSetDisplayTransferByTable`) instead of Night Shift. Color temperatures are converted to RGB multipliers using a lookup table based on blackbody radiation calculations from the [Redshift](https://github.com/jonls/redshift) project (CIE color matching functions, Ingo Thies 2013).
+
+Key points:
+- **6500K** = D65 white point (RGB 1.0, 1.0, 1.0) — no color shift
+- **2700K** = Warm incandescent (RGB 1.0, 0.68, 0.35)
+- **1900K** = Candle light (RGB 1.0, 0.52, 0.0)
+- Values are interpolated from a 100K-interval lookup table for any temperature
+
+When you quit KelvinShift, gamma is reset to system defaults.
 
 ## Architecture
 
 ```
 main.swift                 App entry point (menu-bar-only, no Dock icon)
 AppDelegate.swift          Lifecycle — wires up all components
-NightShiftBridge.swift     Dynamically loads CoreBrightness private framework
-                           Maps Kelvin ↔ Night Shift strength (0.0–1.0)
+GammaController.swift      CoreGraphics gamma table manipulation
+                           Blackbody lookup table (1000K–10000K)
 SolarCalculator.swift      NOAA sunrise/sunset algorithm (±1 min accuracy)
 ScheduleEngine.swift       15-second timer calculates current Kelvin target
                            Hermite-smoothed transitions between day/night
 StatusBarController.swift  Menu bar icon + dropdown with live status
 PreferencesWindow.swift    SwiftUI settings panel (hosted in NSWindow)
 Settings.swift             ObservableObject backed by UserDefaults
+LocationManager.swift      CoreLocation wrapper for detecting user location
 ```
-
-### How It Hooks Into Night Shift
-
-KelvinShift uses the private `CBBlueLightClient` class from Apple's CoreBrightness framework. It:
-
-1. **Enables** Night Shift and sets its schedule to **manual** (mode 0) so KelvinShift has exclusive control.
-2. Every 15 seconds, calculates the target Kelvin based on the current time and schedule.
-3. Converts the Kelvin value to a Night Shift **strength** (0.0 = no shift at 6500 K, 1.0 = max warmth at ~1900 K).
-4. Applies the strength via `setStrength:commit:`.
-
-When you quit KelvinShift, it resets Night Shift strength to 0 (native white point). You can then re-enable Night Shift's built-in schedule from System Settings if you want.
 
 ## Defaults
 
@@ -71,34 +73,28 @@ When you quit KelvinShift, it resets Night Shift strength to 0 (native white poi
 | Schedule | Solar | Uses NOAA algorithm |
 | Location | 41.10, −74.01 | Nanuet, NY |
 | Transition | 20 minutes | Smooth Hermite ramp |
-| Calibration min K | 1900 K | Night Shift strength 1.0 |
 
-## Calibration
+## Preferences
 
-Night Shift's maximum warmth (strength = 1.0) varies slightly by display hardware. Most Apple Silicon Macs reach approximately **1900 K** at full warmth, but some external displays may clip earlier.
-
-If your night temperature feels too warm or not warm enough:
-
-1. Open **Preferences → Advanced Calibration**
-2. Adjust "NS max-warmth" (the Kelvin value that strength 1.0 corresponds to)
-3. If you have a colorimeter, set Night Shift to max warmth via System Settings and measure the actual correlated color temperature
-
-A higher calibration value (e.g. 2700) compresses the usable range, while a lower value (e.g. 1500) expands it.
+- **Color Temperature**: Set day and night Kelvin values (with live preview when adjusting sliders)
+- **Schedule**: Solar (automatic sunrise/sunset) or custom times
+- **Location**: Enter coordinates manually or click "Use Current" to detect via Location Services
+- **Transition**: How long the smooth ramp takes between day and night
+- **Launch at Login**: Auto-start on login (macOS 13+)
 
 ## Troubleshooting
 
-**"Could not load CoreBrightness framework"**
-- Night Shift may not be supported on your hardware
-- On macOS Sequoia+, System Integrity Protection may block private framework access. Try disabling App Sandbox if building with Xcode.
-
-**Night Shift keeps reverting to its own schedule**
-- KelvinShift sets Night Shift to manual mode (mode 0) on startup. If another app or a System Settings change overrides this, KelvinShift re-applies on the next 15-second tick.
-
-**Menu bar shows wrong Kelvin**
-- Recalibrate in Preferences → Advanced Calibration
-
 **Gatekeeper blocks the app**
-- Run: `xattr -cr /Applications/KelvinShift.app` then reopen
+```bash
+xattr -cr /Applications/KelvinShift.app
+```
+
+**Colors don't change**
+- Check System Settings → Privacy & Security → Accessibility (app may need permission)
+- Try quitting and relaunching
+
+**Login item doesn't persist**
+- KelvinShift auto-repairs the login item if deleted; just relaunch the app
 
 ## Uninstall
 
