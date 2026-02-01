@@ -51,13 +51,13 @@ struct PreferencesView: View {
                     .foregroundColor(.orange)
                     .opacity(previewingSlider != nil ? 1 : 0)
                 }
-                .padding(.vertical, 4)
+                .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // ── Schedule ───────────────────────────────
             GroupBox(label: Label("Schedule", systemImage: "clock")) {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: 12) {
                     Picker("Mode", selection: $s.scheduleMode) {
                         Text("Solar (sunrise / sunset)").tag("solar")
                         Text("Custom times").tag("custom")
@@ -109,7 +109,7 @@ struct PreferencesView: View {
                         }
                     }
                 }
-                .padding(.vertical, 8)
+                .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
