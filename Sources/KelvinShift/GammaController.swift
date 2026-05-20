@@ -113,6 +113,7 @@ final class GammaController {
     private var savedGammaRamps: [CGDirectDisplayID: (r: [CGGammaValue], g: [CGGammaValue], b: [CGGammaValue])] = [:]
     private var currentKelvin: Int = 6500
     private var currentBrightness: Double = 1.0
+    private var hasAppliedGamma: Bool = false
 
     private init() {
         saveOriginalGamma()
@@ -135,11 +136,23 @@ final class GammaController {
     func applyKelvinWithBrightness(_ kelvin: Int, brightness: Double) -> Bool {
         let clampedKelvin = max(1000, min(10000, kelvin))
         let clampedBrightness = max(0.1, min(1.0, brightness))
+
+        // Skip redundant gamma-table writes. Each CGSetDisplayTransferByTable call
+        // causes Chromium 148+ on macOS 26.4 to re-query the display color profile,
+        // producing a visible flash. Only re-apply when the target actually changes.
+        if hasAppliedGamma
+            && clampedKelvin == currentKelvin
+            && abs(clampedBrightness - currentBrightness) < 0.001 {
+            return true
+        }
+
         currentKelvin = clampedKelvin
         currentBrightness = clampedBrightness
 
         let rgb = Self.kelvinToRGB(clampedKelvin)
-        return applyRGBMultipliers(r: rgb.r, g: rgb.g, b: rgb.b, brightness: Float(clampedBrightness))
+        let ok = applyRGBMultipliers(r: rgb.r, g: rgb.g, b: rgb.b, brightness: Float(clampedBrightness))
+        if ok { hasAppliedGamma = true }
+        return ok
     }
 
     /// Get the current applied color temperature.
@@ -156,6 +169,7 @@ final class GammaController {
     func resetGamma() {
         currentKelvin = 6500
         currentBrightness = 1.0
+        hasAppliedGamma = false
         CGDisplayRestoreColorSyncSettings()
     }
 
