@@ -12,7 +12,7 @@ final class PreferencesWindowController: NSWindowController {
         let win = NSWindow(contentViewController: hc)
         win.title = "KelvinShift Preferences"
         win.styleMask = [.titled, .closable]
-        win.setContentSize(NSSize(width: 460, height: 880))
+        win.setContentSize(NSSize(width: 460, height: 1080))
         win.center()
         win.isReleasedWhenClosed = false
         self.init(window: win)
@@ -24,12 +24,14 @@ final class PreferencesWindowController: NSWindowController {
 struct PreferencesView: View {
     @ObservedObject private var s = Settings.shared
     @ObservedObject private var locationManager = LocationManager.shared
-    /// Tracks which slider is currently being dragged: "day", "night", "dayBrt", "nightBrt", or nil.
+    /// Tracks which slider is currently being dragged: "day", "night", "dayBrt", "nightBrt", "bedK", "bedBrt", or nil.
     @State private var previewingSlider: String? = nil
     @GestureState private var isDaySliderPressed = false
     @GestureState private var isNightSliderPressed = false
     @GestureState private var isDayBrtSliderPressed = false
     @GestureState private var isNightBrtSliderPressed = false
+    @GestureState private var isBedKSliderPressed = false
+    @GestureState private var isBedBrtSliderPressed = false
 
     /// State for the transition demo
     @State private var isDemoRunning = false
@@ -62,6 +64,32 @@ struct PreferencesView: View {
                     nightBrightnessRow
                     Text("Dims the screen via gamma — does not affect backlight")
                         .font(.caption).foregroundColor(.secondary)
+
+                    previewingIndicator
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // ── Bedtime ───────────────────────────────────
+            GroupBox(label: Label("Bedtime", systemImage: "bed.double")) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Enable bedtime ramp", isOn: $s.bedtimeEnabled)
+
+                    Group {
+                        bedKelvinRow
+                        bedBrightnessRow
+                        HStack(spacing: 16) {
+                            labelled("Bedtime") {
+                                hourPicker($s.bedtimeHour, $s.bedtimeMinute)
+                            }
+                        }
+                        Text("After night settings are reached, the display slowly ramps to these warmer/dimmer bedtime values across the entire interval from night-start to your bedtime.")
+                            .font(.caption).foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .disabled(!s.bedtimeEnabled)
+                    .opacity(s.bedtimeEnabled ? 1 : 0.5)
 
                     previewingIndicator
                 }
@@ -182,7 +210,7 @@ struct PreferencesView: View {
             Spacer()
         }
         .padding()
-        .frame(width: 460, height: 880)
+        .frame(width: 460, height: 1080)
         // Observe Kelvin changes to drive preview while slider is held
         .onChange(of: s.dayKelvin) { newVal in
             if previewingSlider == "day" {
@@ -201,6 +229,16 @@ struct PreferencesView: View {
         }
         .onChange(of: s.nightBrightness) { newVal in
             if previewingSlider == "nightBrt" {
+                ScheduleEngine.current?.updateBrightnessPreview(newVal)
+            }
+        }
+        .onChange(of: s.bedtimeKelvin) { newVal in
+            if previewingSlider == "bedK" {
+                ScheduleEngine.current?.updatePreview(newVal)
+            }
+        }
+        .onChange(of: s.bedtimeBrightness) { newVal in
+            if previewingSlider == "bedBrt" {
                 ScheduleEngine.current?.updateBrightnessPreview(newVal)
             }
         }
@@ -314,6 +352,58 @@ struct PreferencesView: View {
         }
     }
 
+    private var bedKelvinRow: some View {
+        HStack {
+            Text("Bed K:").frame(width: 46, alignment: .trailing)
+            TextField("", value: $s.bedtimeKelvin, format: .number)
+                .frame(width: 60)
+            Text("K")
+            Stepper("", value: $s.bedtimeKelvin, in: 1000...4000, step: 100).labelsHidden()
+            Slider(value: bedKelvinDouble, in: 1000...4000, step: 100)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .updating($isBedKSliderPressed) { _, state, _ in
+                            state = true
+                        }
+                )
+                .onChange(of: isBedKSliderPressed) { pressed in
+                    if pressed {
+                        previewingSlider = "bedK"
+                        ScheduleEngine.current?.startPreview(s.bedtimeKelvin)
+                    } else {
+                        previewingSlider = nil
+                        ScheduleEngine.current?.stopPreview()
+                    }
+                }
+        }
+    }
+
+    private var bedBrightnessRow: some View {
+        HStack {
+            Text("Bed %:").frame(width: 46, alignment: .trailing)
+            TextField("", value: bedBrightnessPercent, format: .number)
+                .frame(width: 60)
+            Text("%")
+            Stepper("", value: $s.bedtimeBrightness, in: 0.1...1.0, step: 0.05).labelsHidden()
+            Slider(value: $s.bedtimeBrightness, in: 0.1...1.0, step: 0.05)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 0)
+                        .updating($isBedBrtSliderPressed) { _, state, _ in
+                            state = true
+                        }
+                )
+                .onChange(of: isBedBrtSliderPressed) { pressed in
+                    if pressed {
+                        previewingSlider = "bedBrt"
+                        ScheduleEngine.current?.startBrightnessPreview(s.bedtimeBrightness)
+                    } else {
+                        previewingSlider = nil
+                        ScheduleEngine.current?.stopPreview()
+                    }
+                }
+        }
+    }
+
     private var previewingIndicator: some View {
         HStack(spacing: 4) {
             Image(systemName: "eye.fill")
@@ -379,6 +469,16 @@ struct PreferencesView: View {
     private var nightBrightnessPercent: Binding<Int> {
         Binding(get: { Int((s.nightBrightness * 100).rounded()) },
                 set: { s.nightBrightness = max(0.1, min(1.0, Double($0) / 100.0)) })
+    }
+
+    private var bedKelvinDouble: Binding<Double> {
+        Binding(get: { Double(s.bedtimeKelvin) },
+                set: { s.bedtimeKelvin = Int($0) })
+    }
+
+    private var bedBrightnessPercent: Binding<Int> {
+        Binding(get: { Int((s.bedtimeBrightness * 100).rounded()) },
+                set: { s.bedtimeBrightness = max(0.1, min(1.0, Double($0) / 100.0)) })
     }
 
     private func h12(_ h: Int) -> String {

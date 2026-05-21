@@ -15,6 +15,7 @@ import Foundation
 
 enum SchedulePhase: String {
     case day, night, transitionToNight, transitionToDay
+    case rampToBedtime, bedtime
 }
 
 struct ScheduleState {
@@ -25,6 +26,9 @@ struct ScheduleState {
     let nightKelvin: Int
     let dayBrightness: Double
     let nightBrightness: Double
+    let bedtimeEnabled: Bool
+    let bedtimeKelvin: Int
+    let bedtimeBrightness: Double
     let sunriseTime: Date?
     let sunsetTime: Date?
     let nextEvent: Date?
@@ -103,32 +107,8 @@ final class ScheduleEngine {
 
     /// Restores the scheduled Kelvin and brightness based on current time
     private func restoreScheduledSettings() {
-        let now = Date()
-        let (dayMin, nightMin, _, _) = scheduleTimes(for: now)
-        let nowMin = minutesFromMidnight(now)
-        let tranMin = settings.transitionMinutes
-        let nightTransStart = wrap(nightMin - tranMin)
-        let dayTransStart = wrap(dayMin - tranMin)
-
-        let kelvin: Int
-        let brightness: Double
-        if inRange(nowMin, from: dayMin, to: nightTransStart) {
-            kelvin = settings.dayKelvin
-            brightness = settings.dayBrightness
-        } else if inRange(nowMin, from: nightTransStart, to: nightMin) {
-            let p = progress(nowMin, from: nightTransStart, length: tranMin)
-            kelvin = lerp(settings.dayKelvin, settings.nightKelvin, p)
-            brightness = lerpD(settings.dayBrightness, settings.nightBrightness, p)
-        } else if inRange(nowMin, from: nightMin, to: dayTransStart) {
-            kelvin = settings.nightKelvin
-            brightness = settings.nightBrightness
-        } else {
-            let p = progress(nowMin, from: dayTransStart, length: tranMin)
-            kelvin = lerp(settings.nightKelvin, settings.dayKelvin, p)
-            brightness = lerpD(settings.nightBrightness, settings.dayBrightness, p)
-        }
-
-        gamma.applyKelvinWithBrightness(kelvin, brightness: brightness)
+        let r = computeSchedule(at: Date())
+        gamma.applyKelvinWithBrightness(r.kelvin, brightness: r.brightness)
     }
 
     /// Starts the transition demo, cycling through a full day in the specified duration
@@ -174,26 +154,38 @@ final class ScheduleEngine {
         restoreScheduledSettings()
     }
 
-    /// Applies color temperature and brightness for a given position in the demo cycle
-    /// - Parameter demoProgress: Progress through demo (0.0 = day, 0.5 = night, 1.0 = back to day)
+    /// Applies color temperature and brightness for a given position in the demo cycle.
+    /// - When bedtime is disabled: 2-segment day → night → day cycle.
+    /// - When bedtime is enabled: 3-segment day → night → bedtime → day cycle.
     private func applyDemoSettings(at demoProgress: Double) {
-        // Simple cycle: day → night → day
-        // First half (0.0 to 0.5): transition from day to night
-        // Second half (0.5 to 1.0): transition from night to day
-
         let kelvin: Int
         let brightness: Double
 
-        if demoProgress < 0.5 {
-            // Transitioning from day to night (0.0 → 0.5 maps to 0.0 → 1.0)
-            let p = demoProgress * 2.0
-            kelvin = lerp(settings.dayKelvin, settings.nightKelvin, p)
-            brightness = lerpD(settings.dayBrightness, settings.nightBrightness, p)
+        if settings.bedtimeEnabled {
+            let third = 1.0 / 3.0
+            if demoProgress < third {
+                let p = demoProgress * 3.0
+                kelvin     = lerp (settings.dayKelvin,     settings.nightKelvin,     p)
+                brightness = lerpD(settings.dayBrightness, settings.nightBrightness, p)
+            } else if demoProgress < 2.0 * third {
+                let p = (demoProgress - third) * 3.0
+                kelvin     = lerp (settings.nightKelvin,     settings.bedtimeKelvin,     p)
+                brightness = lerpD(settings.nightBrightness, settings.bedtimeBrightness, p)
+            } else {
+                let p = (demoProgress - 2.0 * third) * 3.0
+                kelvin     = lerp (settings.bedtimeKelvin,     settings.dayKelvin,     p)
+                brightness = lerpD(settings.bedtimeBrightness, settings.dayBrightness, p)
+            }
         } else {
-            // Transitioning from night to day (0.5 → 1.0 maps to 0.0 → 1.0)
-            let p = (demoProgress - 0.5) * 2.0
-            kelvin = lerp(settings.nightKelvin, settings.dayKelvin, p)
-            brightness = lerpD(settings.nightBrightness, settings.dayBrightness, p)
+            if demoProgress < 0.5 {
+                let p = demoProgress * 2.0
+                kelvin     = lerp (settings.dayKelvin,     settings.nightKelvin,     p)
+                brightness = lerpD(settings.dayBrightness, settings.nightBrightness, p)
+            } else {
+                let p = (demoProgress - 0.5) * 2.0
+                kelvin     = lerp (settings.nightKelvin,     settings.dayKelvin,     p)
+                brightness = lerpD(settings.nightBrightness, settings.dayBrightness, p)
+            }
         }
 
         gamma.applyKelvinWithBrightness(kelvin, brightness: brightness)
@@ -206,6 +198,7 @@ final class ScheduleEngine {
             phase: .day, currentKelvin: 6500, currentBrightness: 1.0,
             dayKelvin: 5000, nightKelvin: 2700,
             dayBrightness: 1.0, nightBrightness: 0.8,
+            bedtimeEnabled: false, bedtimeKelvin: 1900, bedtimeBrightness: 0.4,
             sunriseTime: nil, sunsetTime: nil,
             nextEvent: nil, enabled: true
         )
@@ -248,47 +241,79 @@ final class ScheduleEngine {
         }
 
         let now = Date()
-        let (dayMin, nightMin, sunrise, sunset) = scheduleTimes(for: now)
-        let nowMin   = minutesFromMidnight(now)
-        let tranMin  = settings.transitionMinutes
+        let (_, _, sunrise, sunset) = scheduleTimes(for: now)
+        let r = computeSchedule(at: now)
+        let next = todayAt(r.nextMinute, relativeTo: now)
 
+        gamma.applyKelvinWithBrightness(r.kelvin, brightness: r.brightness)
+        publish(r.phase, kelvin: r.kelvin, brightness: r.brightness, sunrise: sunrise, sunset: sunset, next: next, enabled: true)
+    }
+
+    // MARK: – Shared schedule computation
+    //
+    // Computes the target (kelvin, brightness, phase, next-anchor) for a given
+    // wall-clock instant. Walks a 4-anchor timeline (day, transitionToNight,
+    // night, transitionToDay) when bedtime is disabled, and a 6-anchor timeline
+    // (… rampToBedtime, bedtime …) when enabled. The morning transitionToDay
+    // sources from bedtime values when active, else from night values.
+    //
+    // Bedtime is "active" only if the wall-time falls strictly between
+    // night-start and the next day-start in clockwise order — invalid configs
+    // (e.g. bedtime earlier than night-start) silently fall back to the
+    // 4-anchor model so the user never gets a stuck schedule.
+    private func computeSchedule(at now: Date)
+        -> (kelvin: Int, brightness: Double, phase: SchedulePhase, nextMinute: Int)
+    {
+        let (dayMin, nightMin, _, _) = scheduleTimes(for: now)
+        let nowMin = minutesFromMidnight(now)
+        let tranMin = settings.transitionMinutes
         let nightTransStart = wrap(nightMin - tranMin)
         let dayTransStart   = wrap(dayMin   - tranMin)
 
-        let kelvin: Int
-        let brightness: Double
-        let phase: SchedulePhase
-        var next: Date? = nil
+        let useBedtime = bedtimeIsActive(dayMin: dayMin, nightMin: nightMin)
+        let bedMin = wrap(settings.bedtimeHour * 60 + settings.bedtimeMinute)
+
+        // Morning transition source: bedtime values when active, else night.
+        let morningFromK = useBedtime ? settings.bedtimeKelvin     : settings.nightKelvin
+        let morningFromB = useBedtime ? settings.bedtimeBrightness : settings.nightBrightness
 
         if inRange(nowMin, from: dayMin, to: nightTransStart) {
-            phase  = .day
-            kelvin = settings.dayKelvin
-            brightness = settings.dayBrightness
-            next   = todayAt(nightTransStart, relativeTo: now)
-
-        } else if inRange(nowMin, from: nightTransStart, to: nightMin) {
-            phase  = .transitionToNight
-            let p  = progress(nowMin, from: nightTransStart, length: tranMin)
-            kelvin = lerp(settings.dayKelvin, settings.nightKelvin, p)
-            brightness = lerpD(settings.dayBrightness, settings.nightBrightness, p)
-            next   = todayAt(nightMin, relativeTo: now)
-
-        } else if inRange(nowMin, from: nightMin, to: dayTransStart) {
-            phase  = .night
-            kelvin = settings.nightKelvin
-            brightness = settings.nightBrightness
-            next   = todayAt(dayTransStart, relativeTo: now)
-
-        } else {
-            phase  = .transitionToDay
-            let p  = progress(nowMin, from: dayTransStart, length: tranMin)
-            kelvin = lerp(settings.nightKelvin, settings.dayKelvin, p)
-            brightness = lerpD(settings.nightBrightness, settings.dayBrightness, p)
-            next   = todayAt(dayMin, relativeTo: now)
+            return (settings.dayKelvin, settings.dayBrightness, .day, nightTransStart)
         }
+        if inRange(nowMin, from: nightTransStart, to: nightMin) {
+            let p = progress(nowMin, from: nightTransStart, length: tranMin)
+            return (lerp(settings.dayKelvin, settings.nightKelvin, p),
+                    lerpD(settings.dayBrightness, settings.nightBrightness, p),
+                    .transitionToNight, nightMin)
+        }
+        if inRange(nowMin, from: dayTransStart, to: dayMin) {
+            let p = progress(nowMin, from: dayTransStart, length: tranMin)
+            return (lerp(morningFromK, settings.dayKelvin, p),
+                    lerpD(morningFromB, settings.dayBrightness, p),
+                    .transitionToDay, dayMin)
+        }
+        // Past nightMin, before dayTransStart.
+        if useBedtime {
+            if inRange(nowMin, from: nightMin, to: bedMin) {
+                let rampLen = wrap(bedMin - nightMin)
+                let p = progress(nowMin, from: nightMin, length: rampLen)
+                return (lerp(settings.nightKelvin, settings.bedtimeKelvin, p),
+                        lerpD(settings.nightBrightness, settings.bedtimeBrightness, p),
+                        .rampToBedtime, bedMin)
+            }
+            return (settings.bedtimeKelvin, settings.bedtimeBrightness, .bedtime, dayTransStart)
+        }
+        return (settings.nightKelvin, settings.nightBrightness, .night, dayTransStart)
+    }
 
-        gamma.applyKelvinWithBrightness(kelvin, brightness: brightness)
-        publish(phase, kelvin: kelvin, brightness: brightness, sunrise: sunrise, sunset: sunset, next: next, enabled: true)
+    /// True iff bedtime is enabled AND falls strictly after night-start and
+    /// strictly before the next day-start (in clockwise wrap order).
+    private func bedtimeIsActive(dayMin: Int, nightMin: Int) -> Bool {
+        guard settings.bedtimeEnabled else { return false }
+        let bedMin = wrap(settings.bedtimeHour * 60 + settings.bedtimeMinute)
+        let nightToDay = wrap(dayMin - nightMin)
+        let nightToBed = wrap(bedMin - nightMin)
+        return nightToBed > 0 && nightToBed < nightToDay
     }
 
     // MARK: – Schedule helpers
@@ -354,6 +379,9 @@ final class ScheduleEngine {
             phase: phase, currentKelvin: kelvin, currentBrightness: brightness,
             dayKelvin: settings.dayKelvin, nightKelvin: settings.nightKelvin,
             dayBrightness: settings.dayBrightness, nightBrightness: settings.nightBrightness,
+            bedtimeEnabled: settings.bedtimeEnabled,
+            bedtimeKelvin: settings.bedtimeKelvin,
+            bedtimeBrightness: settings.bedtimeBrightness,
             sunriseTime: sunrise, sunsetTime: sunset,
             nextEvent: next, enabled: enabled
         )

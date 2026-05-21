@@ -13,6 +13,7 @@ final class StatusBarController {
     private var miPhase:    NSMenuItem!
     private var miDay:      NSMenuItem!
     private var miNight:    NSMenuItem!
+    private var miBedtime:  NSMenuItem!
     private var miSchedule: NSMenuItem!
     private var miEnabled:  NSMenuItem!
 
@@ -38,6 +39,7 @@ final class StatusBarController {
         m.addItem(.separator())
         miDay     = addItem(m, "")
         miNight   = addItem(m, "")
+        miBedtime = addItem(m, "")
         miSchedule = addItem(m, "")
         m.addItem(.separator())
 
@@ -84,6 +86,8 @@ final class StatusBarController {
                     case .night:             return "☾"
                     case .transitionToNight: return "☀→☾"
                     case .transitionToDay:   return "☾→☀"
+                    case .rampToBedtime:     return "☾→🛏"
+                    case .bedtime:           return "🛏"
                     }
                 }()
                 btn.title = "\(icon) \(s.currentKelvin)K"
@@ -98,8 +102,13 @@ final class StatusBarController {
 
         miCurrent.title  = "Current: \(s.currentKelvin) K  ·  \(currentBrtPct)%"
         miPhase.title    = phaseLabel(s.phase)
-        miDay.title      = "☀  Day:   \(s.dayKelvin) K  ·  \(dayBrtPct)%"
-        miNight.title    = "☾  Night: \(s.nightKelvin) K  ·  \(nightBrtPct)%"
+        miDay.title      = "☀  Day:     \(s.dayKelvin) K  ·  \(dayBrtPct)%"
+        miNight.title    = "☾  Night:   \(s.nightKelvin) K  ·  \(nightBrtPct)%"
+
+        let bedBrtPct = Int((s.bedtimeBrightness * 100).rounded())
+        miBedtime.title    = "🛏  Bedtime: \(s.bedtimeKelvin) K  ·  \(bedBrtPct)%"
+        miBedtime.isHidden = !s.bedtimeEnabled
+
         miSchedule.title = scheduleLabel(s)
         miEnabled.state  = s.enabled ? .on : .off
     }
@@ -110,6 +119,8 @@ final class StatusBarController {
         case .night:             return "☾  Nighttime"
         case .transitionToNight: return "☀→☾  Transitioning to Night"
         case .transitionToDay:   return "☾→☀  Transitioning to Day"
+        case .rampToBedtime:     return "☾→🛏  Ramping to Bedtime"
+        case .bedtime:           return "🛏  Bedtime"
         }
     }
 
@@ -119,9 +130,11 @@ final class StatusBarController {
             let f = DateFormatter(); f.timeStyle = .short
             let r = s.sunriseTime.map { f.string(from: $0) } ?? "–"
             let t = s.sunsetTime.map  { f.string(from: $0) } ?? "–"
-            return "Schedule: Solar  ↑\(r)  ↓\(t)"
+            let bed = set.bedtimeEnabled ? "  🛏\(set.bedtimeTimeLabel)" : ""
+            return "Schedule: Solar  ↑\(r)  ↓\(t)\(bed)"
         }
-        return "Schedule: \(set.dayTimeLabel) – \(set.nightTimeLabel)"
+        let bed = set.bedtimeEnabled ? " · 🛏\(set.bedtimeTimeLabel)" : ""
+        return "Schedule: \(set.dayTimeLabel) – \(set.nightTimeLabel)\(bed)"
     }
 
     // MARK: – Actions

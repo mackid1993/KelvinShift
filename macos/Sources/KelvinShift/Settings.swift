@@ -64,6 +64,29 @@ final class Settings: ObservableObject {
         didSet { let v = max(transitionMinutes, 1); if transitionMinutes != v { transitionMinutes = v; return }; save("ks_transMins", v) }
     }
 
+    // ── Bedtime (optional third anchor after night) ────────
+    //
+    // When enabled, the schedule gains a slow ramp from night → bedtime
+    // settings. The ramp duration is implicit: it fills the entire window
+    // from night-start to bedtime. After bedtime, values hold until the
+    // morning day-transition begins, which interpolates from bedtime → day.
+
+    @Published var bedtimeEnabled: Bool {
+        didSet { save("ks_bedEnabled", bedtimeEnabled) }
+    }
+    @Published var bedtimeKelvin: Int {
+        didSet { let v = clamp(bedtimeKelvin, 1000, 4000); if bedtimeKelvin != v { bedtimeKelvin = v; return }; save("ks_bedK", v) }
+    }
+    @Published var bedtimeBrightness: Double {
+        didSet { let v = clampD(bedtimeBrightness, 0.1, 1.0); if bedtimeBrightness != v { bedtimeBrightness = v; return }; save("ks_bedBrt", v) }
+    }
+    @Published var bedtimeHour: Int {
+        didSet { save("ks_bedH", bedtimeHour) }
+    }
+    @Published var bedtimeMinute: Int {
+        didSet { save("ks_bedM", bedtimeMinute) }
+    }
+
     // ── Master toggle ──────────────────────────────────────
 
     @Published var enabled: Bool {
@@ -105,6 +128,11 @@ final class Settings: ObservableObject {
         longitude         = d.object(forKey: "ks_lon")        as? Double ?? 0.0
         locationName      = d.string(forKey: "ks_locName")               ?? ""
         transitionMinutes = d.object(forKey: "ks_transMins")  as? Int    ?? 20
+        bedtimeEnabled    = d.object(forKey: "ks_bedEnabled") as? Bool   ?? false
+        bedtimeKelvin     = d.object(forKey: "ks_bedK")       as? Int    ?? 1900
+        bedtimeBrightness = d.object(forKey: "ks_bedBrt")     as? Double ?? 0.4
+        bedtimeHour       = d.object(forKey: "ks_bedH")       as? Int    ?? 23
+        bedtimeMinute     = d.object(forKey: "ks_bedM")       as? Int    ?? 0
         enabled           = d.object(forKey: "ks_enabled")    as? Bool   ?? true
 
         // Sync launchAtLogin: prefer user's saved preference, re-register if needed
@@ -157,8 +185,9 @@ final class Settings: ObservableObject {
     private func clamp(_ v: Int, _ lo: Int, _ hi: Int) -> Int { min(max(v, lo), hi) }
     private func clampD(_ v: Double, _ lo: Double, _ hi: Double) -> Double { min(max(v, lo), hi) }
 
-    var dayTimeLabel: String   { formatTime(customDayHour, customDayMinute) }
-    var nightTimeLabel: String { formatTime(customNightHour, customNightMinute) }
+    var dayTimeLabel: String     { formatTime(customDayHour, customDayMinute) }
+    var nightTimeLabel: String   { formatTime(customNightHour, customNightMinute) }
+    var bedtimeTimeLabel: String { formatTime(bedtimeHour, bedtimeMinute) }
 
     private func formatTime(_ h: Int, _ m: Int) -> String {
         let h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h)

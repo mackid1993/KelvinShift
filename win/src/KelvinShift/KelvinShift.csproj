@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>KelvinShift</AssemblyName>
+    <RootNamespace>KelvinShift</RootNamespace>
+    <ApplicationIcon>AppIcon.ico</ApplicationIcon>
+    <Version>1.0.0</Version>
+    <Authors>David Brustein</Authors>
+    <Product>KelvinShift</Product>
+    <Description>Accurate Kelvin-based color temperature scheduling for Windows.</Description>
+    <Copyright>Copyright 2026</Copyright>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="3.0.5" />
+    <PackageReference Include="H.NotifyIcon.Wpf" Version="2.1.4" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.3.2" />
+    <!-- GDI+ for rendering the dynamic tray glyph. Standalone package — does
+         NOT pull in System.Windows.Forms (which would collide with WPF's
+         System.Windows.Application). -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.10" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Resource (not None) so the .ico is reachable via pack:// URIs at
+         runtime in addition to being embedded in the PE header by the
+         <ApplicationIcon> property above. -->
+    <Resource Include="AppIcon.ico" Condition="Exists('AppIcon.ico')" />
+  </ItemGroup>
+
+</Project>
