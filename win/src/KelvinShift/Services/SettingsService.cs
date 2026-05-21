@@ -32,10 +32,10 @@ public sealed class SettingsService : INotifyPropertyChanged
 
     // ── Color Temperature ──────────────────────────────────
     private int _dayKelvin = 5000;
-    public int DayKelvin { get => _dayKelvin; set => Set(ref _dayKelvin, Math.Clamp(value, 2000, 6500)); }
+    public int DayKelvin { get => _dayKelvin; set => Set(ref _dayKelvin, Math.Clamp(value, 1000, 6500)); }
 
     private int _nightKelvin = 2700;
-    public int NightKelvin { get => _nightKelvin; set => Set(ref _nightKelvin, Math.Clamp(value, 1800, 5500)); }
+    public int NightKelvin { get => _nightKelvin; set => Set(ref _nightKelvin, Math.Clamp(value, 1000, 6500)); }
 
     // ── Brightness ────────────────────────────────────────
     private double _dayBrightness = 1.0;
@@ -79,7 +79,7 @@ public sealed class SettingsService : INotifyPropertyChanged
     public bool BedtimeEnabled { get => _bedtimeEnabled; set => Set(ref _bedtimeEnabled, value); }
 
     private int _bedtimeKelvin = 1900;
-    public int BedtimeKelvin { get => _bedtimeKelvin; set => Set(ref _bedtimeKelvin, Math.Clamp(value, 1000, 4000)); }
+    public int BedtimeKelvin { get => _bedtimeKelvin; set => Set(ref _bedtimeKelvin, Math.Clamp(value, 1000, 6500)); }
 
     private double _bedtimeBrightness = 0.4;
     public double BedtimeBrightness { get => _bedtimeBrightness; set => Set(ref _bedtimeBrightness, Math.Clamp(value, 0.1, 1.0)); }

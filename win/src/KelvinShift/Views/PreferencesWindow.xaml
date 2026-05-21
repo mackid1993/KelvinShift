@@ -43,7 +43,7 @@
                     <StackPanel>
                         <TextBlock Text="🌡  Color Temperature" FontWeight="SemiBold" Margin="0,0,0,10"/>
 
-                        <Grid Height="36" Margin="0,0,0,4">
+                        <Grid Height="40" Margin="0,0,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
@@ -62,7 +62,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <Grid Height="36" Margin="0,8,0,4">
+                        <Grid Height="40" Margin="0,8,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
@@ -81,7 +81,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <Grid Height="32" Margin="0,8,0,4" Visibility="{Binding Settings.BedtimeEnabled, Converter={StaticResource BoolToVisibility}}">
+                        <Grid Height="40" Margin="0,8,0,4" Visibility="{Binding Settings.BedtimeEnabled, Converter={StaticResource BoolToVisibility}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
@@ -108,7 +108,7 @@
                     <StackPanel>
                         <TextBlock Text="☀  Brightness" FontWeight="SemiBold" Margin="0,0,0,10"/>
 
-                        <Grid Height="36" Margin="0,0,0,4">
+                        <Grid Height="40" Margin="0,0,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
@@ -126,7 +126,7 @@
                                        VerticalAlignment="Center" HorizontalAlignment="Right"/>
                         </Grid>
 
-                        <Grid Height="36" Margin="0,8,0,4">
+                        <Grid Height="40" Margin="0,8,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
@@ -144,7 +144,7 @@
                                        VerticalAlignment="Center" HorizontalAlignment="Right"/>
                         </Grid>
 
-                        <Grid Height="32" Margin="0,8,0,4" Visibility="{Binding Settings.BedtimeEnabled, Converter={StaticResource BoolToVisibility}}">
+                        <Grid Height="40" Margin="0,8,0,4" Visibility="{Binding Settings.BedtimeEnabled, Converter={StaticResource BoolToVisibility}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
