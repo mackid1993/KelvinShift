@@ -7,7 +7,9 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Threading;
 using H.NotifyIcon;
 
 namespace KelvinShift.Services;
@@ -50,8 +52,11 @@ public sealed class TrayIconService : IDisposable
             NoLeftClickDelay = true,
         };
 
-        engine.StateChanged += (_, _) => Refresh();
-        settings.SettingsChanged += (_, _) => Refresh();
+        // Skip refresh while the menu is open — re-measuring during user
+        // interaction stalls the popup and the user closes it within seconds
+        // anyway, so any stale value is short-lived.
+        engine.StateChanged += (_, _) => { if (!IsMenuOpen()) Refresh(); };
+        settings.SettingsChanged += (_, _) => { if (!IsMenuOpen()) Refresh(); };
     }
 
     public void Show()
@@ -63,6 +68,32 @@ public sealed class TrayIconService : IDisposable
 
         _icon.ForceCreate();
         Refresh();
+
+        // Pre-warm the context menu off-screen at idle so the first user
+        // right-click doesn't pay for popup template parsing / first-time
+        // layout. The WPF popup HWND is destroyed on close, so this only
+        // helps the first show — but first-show JIT is the heaviest hit.
+        Application.Current?.Dispatcher.BeginInvoke(
+            DispatcherPriority.ApplicationIdle, new Action(PrewarmContextMenu));
+    }
+
+    private bool IsMenuOpen() => _icon.ContextMenu is { IsOpen: true };
+
+    private void PrewarmContextMenu()
+    {
+        if (_icon.ContextMenu is not ContextMenu m) return;
+        try
+        {
+            m.Placement = PlacementMode.AbsolutePoint;
+            m.HorizontalOffset = -10000;
+            m.VerticalOffset   = -10000;
+            m.IsOpen = true;
+            m.IsOpen = false;
+            m.ClearValue(ContextMenu.PlacementProperty);
+            m.ClearValue(ContextMenu.HorizontalOffsetProperty);
+            m.ClearValue(ContextMenu.VerticalOffsetProperty);
+        }
+        catch { }
     }
 
     public void Dispose()
@@ -82,6 +113,10 @@ public sealed class TrayIconService : IDisposable
             // HWND below shows through. The MenuItems still render their
             // own opaque hover/text — only the menu fill itself is gone.
             Background = System.Windows.Media.Brushes.Transparent,
+            // Skip the default WPF drop-shadow render — Mica already gives
+            // the popup its visual elevation and the shadow adds noticeable
+            // DWM work on every open.
+            HasDropShadow = false,
         };
 
         // Enlarge every menu item AND make the entire padded row hit-test
@@ -103,10 +138,12 @@ public sealed class TrayIconService : IDisposable
             MenuItem.HorizontalContentAlignmentProperty,
             System.Windows.HorizontalAlignment.Stretch));
         m.Resources.Add(typeof(MenuItem), bigItemStyle);
-        // Mica backdrop on the popup HWND once it's realized. The Opened
-        // event fires after the popup window is created and visible, when
-        // PresentationSource.FromVisual can return the actual Win32 hwnd.
-        m.Opened += (sender, _) =>
+        // Apply Mica backdrop + dark mode on Loaded rather than Opened —
+        // Loaded fires after the popup HWND is created but BEFORE Windows
+        // shows it, so the menu's first visible frame already has the
+        // backdrop. Using Opened (after the popup is visible) caused a
+        // perceptible flicker as DWM applied Mica a frame late.
+        m.Loaded += (sender, _) =>
         {
             if (sender is not ContextMenu cm) return;
             var source = System.Windows.PresentationSource.FromVisual(cm) as System.Windows.Interop.HwndSource;
