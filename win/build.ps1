@@ -1,4 +1,4 @@
-# build.ps1 — Build KelvinShift Windows release and package as Inno Setup
+# build.ps1 - Build KelvinShift Windows release and package as Inno Setup
 # installer.
 #
 # Usage:
@@ -70,6 +70,6 @@ if ($installer) {
     Write-Host ""
     Write-Host "    Installer: $($installer.FullName) ($insSize)" -ForegroundColor Green
     Write-Host ""
-    Write-Host "    To install: run the installer (UAC prompt — needs admin for the gamma-range registry key)." -ForegroundColor Cyan
+    Write-Host "    To install: run the installer (UAC prompt - needs admin for the gamma-range registry key)." -ForegroundColor Cyan
     Write-Host "    To uninstall: Settings -> Apps -> KelvinShift." -ForegroundColor Cyan
 }
