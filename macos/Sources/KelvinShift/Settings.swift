@@ -13,10 +13,10 @@ final class Settings: ObservableObject {
     // ── Color Temperature ──────────────────────────────────
 
     @Published var dayKelvin: Int {
-        didSet { let v = clamp(dayKelvin, 2000, 6500); if dayKelvin != v { dayKelvin = v; return }; save("ks_dayK", v) }
+        didSet { let v = clamp(dayKelvin, 1000, 6500); if dayKelvin != v { dayKelvin = v; return }; save("ks_dayK", v) }
     }
     @Published var nightKelvin: Int {
-        didSet { let v = clamp(nightKelvin, 1800, 5500); if nightKelvin != v { nightKelvin = v; return }; save("ks_nightK", v) }
+        didSet { let v = clamp(nightKelvin, 1000, 6500); if nightKelvin != v { nightKelvin = v; return }; save("ks_nightK", v) }
     }
 
     // ── Brightness ────────────────────────────────────────
@@ -76,7 +76,7 @@ final class Settings: ObservableObject {
         didSet { save("ks_bedEnabled", bedtimeEnabled) }
     }
     @Published var bedtimeKelvin: Int {
-        didSet { let v = clamp(bedtimeKelvin, 1000, 4000); if bedtimeKelvin != v { bedtimeKelvin = v; return }; save("ks_bedK", v) }
+        didSet { let v = clamp(bedtimeKelvin, 1000, 6500); if bedtimeKelvin != v { bedtimeKelvin = v; return }; save("ks_bedK", v) }
     }
     @Published var bedtimeBrightness: Double {
         didSet { let v = clampD(bedtimeBrightness, 0.1, 1.0); if bedtimeBrightness != v { bedtimeBrightness = v; return }; save("ks_bedBrt", v) }

@@ -264,44 +264,55 @@ final class ScheduleEngine {
     private func computeSchedule(at now: Date)
         -> (kelvin: Int, brightness: Double, phase: SchedulePhase, nextMinute: Int)
     {
+        // "Day starts" / "Night starts" / "Bedtime" are the times at which
+        // the screen REACHES that state. The transition runs for tranMin
+        // minutes BEFORE the scheduled time and finishes exactly at it.
+        // Each transition's effective length is capped to the available
+        // window between adjacent scheduled times — otherwise tight
+        // schedules (e.g. Day=9:30, Night=10:00 with 180-min transition)
+        // would make the wraparound Full-Day check swallow the rest of
+        // the day.
         let (dayMin, nightMin, _, _) = scheduleTimes(for: now)
         let nowMin = minutesFromMidnight(now)
         let tranMin = settings.transitionMinutes
-        let nightTransStart = wrap(nightMin - tranMin)
-        let dayTransStart   = wrap(dayMin   - tranMin)
 
         let useBedtime = bedtimeIsActive(dayMin: dayMin, nightMin: nightMin)
         let bedMin = wrap(settings.bedtimeHour * 60 + settings.bedtimeMinute)
-
         // Morning transition source: bedtime values when active, else night.
         let morningFromK = useBedtime ? settings.bedtimeKelvin     : settings.nightKelvin
         let morningFromB = useBedtime ? settings.bedtimeBrightness : settings.nightBrightness
+
+        // Gap from each anchor to the next, going forward in clock order.
+        let dayToNight = wrap(nightMin - dayMin)
+        let nightToBed = useBedtime ? wrap(bedMin - nightMin) : 0
+        let bedOrNightToDay = useBedtime ? wrap(dayMin - bedMin)
+                                         : wrap(dayMin - nightMin)
+
+        let nightTransLen = min(tranMin, dayToNight)
+        let dayTransLen   = min(tranMin, bedOrNightToDay)
+        let rampLen       = useBedtime ? min(settings.bedtimeRampMinutes, nightToBed) : 0
+
+        let nightTransStart = wrap(nightMin - nightTransLen)
+        let dayTransStart   = wrap(dayMin   - dayTransLen)
 
         if inRange(nowMin, from: dayMin, to: nightTransStart) {
             return (settings.dayKelvin, settings.dayBrightness, .day, nightTransStart)
         }
         if inRange(nowMin, from: nightTransStart, to: nightMin) {
-            let p = progress(nowMin, from: nightTransStart, length: tranMin)
+            let p = progress(nowMin, from: nightTransStart, length: nightTransLen)
             return (lerp(settings.dayKelvin, settings.nightKelvin, p),
                     lerpD(settings.dayBrightness, settings.nightBrightness, p),
                     .transitionToNight, nightMin)
         }
         if inRange(nowMin, from: dayTransStart, to: dayMin) {
-            let p = progress(nowMin, from: dayTransStart, length: tranMin)
+            let p = progress(nowMin, from: dayTransStart, length: dayTransLen)
             return (lerp(morningFromK, settings.dayKelvin, p),
                     lerpD(morningFromB, settings.dayBrightness, p),
                     .transitionToDay, dayMin)
         }
         // Past nightMin, before dayTransStart.
         if useBedtime {
-            // Explicit bedtime ramp duration. Held night until rampStart,
-            // then linearly (Hermite) ramp to bedtime values across
-            // `bedtimeRampMinutes`. Clamped to the night→bedtime interval
-            // so an over-long ramp just starts at night-start.
-            let nightToBed = wrap(bedMin - nightMin)
-            let rampLen = min(settings.bedtimeRampMinutes, nightToBed)
             let rampStart = wrap(bedMin - rampLen)
-
             if inRange(nowMin, from: nightMin, to: rampStart) {
                 return (settings.nightKelvin, settings.nightBrightness, .night, rampStart)
             }
