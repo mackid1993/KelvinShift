@@ -228,11 +228,15 @@ public sealed class ScheduleEngine
 
     public ScheduleResult ComputeSchedule(DateTime now)
     {
+        // "Night starts" means dimming BEGINS at that time and reaches the
+        // night value `tranMin` minutes later. Same for "Day starts" in the
+        // morning. This matches what the labels say — the scheduled time
+        // is the start of the transition, not its end.
         var (dayMin, nightMin, _, _) = ScheduleTimes(now);
         var nowMin = MinutesFromMidnight(now);
         var tranMin = _settings.TransitionMinutes;
-        var nightTransStart = Wrap(nightMin - tranMin);
-        var dayTransStart   = Wrap(dayMin - tranMin);
+        var nightTransEnd = Wrap(nightMin + tranMin);
+        var dayTransEnd   = Wrap(dayMin   + tranMin);
 
         var useBedtime = BedtimeIsActive(dayMin, nightMin);
         var bedMin = Wrap(_settings.BedtimeHour * 60 + _settings.BedtimeMinute);
@@ -240,50 +244,56 @@ public sealed class ScheduleEngine
         var morningFromK = useBedtime ? _settings.BedtimeKelvin     : _settings.NightKelvin;
         var morningFromB = useBedtime ? _settings.BedtimeBrightness : _settings.NightBrightness;
 
-        if (InRange(nowMin, dayMin, nightTransStart))
-            return new ScheduleResult(_settings.DayKelvin, _settings.DayBrightness, SchedulePhase.Day, nightTransStart);
-        if (InRange(nowMin, nightTransStart, nightMin))
+        // TransitionToDay: dayMin .. dayMin + tranMin
+        if (InRange(nowMin, dayMin, dayTransEnd))
         {
-            var p = Progress(nowMin, nightTransStart, tranMin);
-            return new ScheduleResult(
-                Lerp(_settings.DayKelvin, _settings.NightKelvin, p),
-                LerpD(_settings.DayBrightness, _settings.NightBrightness, p),
-                SchedulePhase.TransitionToNight, nightMin);
-        }
-        if (InRange(nowMin, dayTransStart, dayMin))
-        {
-            var p = Progress(nowMin, dayTransStart, tranMin);
+            var p = Progress(nowMin, dayMin, tranMin);
             return new ScheduleResult(
                 Lerp(morningFromK, _settings.DayKelvin, p),
                 LerpD(morningFromB, _settings.DayBrightness, p),
-                SchedulePhase.TransitionToDay, dayMin);
+                SchedulePhase.TransitionToDay, dayTransEnd);
         }
-        // Past nightMin, before dayTransStart.
+        // Full Day: dayTransEnd .. nightMin
+        if (InRange(nowMin, dayTransEnd, nightMin))
+            return new ScheduleResult(_settings.DayKelvin, _settings.DayBrightness, SchedulePhase.Day, nightMin);
+        // TransitionToNight: nightMin .. nightMin + tranMin
+        if (InRange(nowMin, nightMin, nightTransEnd))
+        {
+            var p = Progress(nowMin, nightMin, tranMin);
+            return new ScheduleResult(
+                Lerp(_settings.DayKelvin, _settings.NightKelvin, p),
+                LerpD(_settings.DayBrightness, _settings.NightBrightness, p),
+                SchedulePhase.TransitionToNight, nightTransEnd);
+        }
+        // Past nightTransEnd, before dayMin.
         if (useBedtime)
         {
-            // Explicit bedtime ramp duration. Hold night until rampStart,
-            // then linearly (Hermite) ramp to bedtime values. Clamped to
-            // the night→bedtime interval so an over-long ramp just starts
-            // at night-start.
-            var nightToBed = Wrap(bedMin - nightMin);
-            var rampLen = Math.Min(_settings.BedtimeRampMinutes, nightToBed);
-            var rampStart = Wrap(bedMin - rampLen);
+            // Bedtime ramp begins at the configured bedtime and reaches the
+            // Bed values bedtimeRampMinutes later — same "starts at the
+            // scheduled time" semantic as the day↔night transition.
+            // Clamped so the ramp can't overrun the night→day window.
+            var nightToDay = Wrap(dayMin - nightTransEnd);
+            var bedFromNightEnd = Wrap(bedMin - nightTransEnd);
+            // If user picked a bedtime BEFORE the night transition completes,
+            // ignore the offset and start the ramp at the configured bed time.
+            var rampStart = bedFromNightEnd <= 0 ? nightTransEnd : bedMin;
+            var rampLen = Math.Min(_settings.BedtimeRampMinutes,
+                                   Math.Max(1, nightToDay - bedFromNightEnd));
+            var rampEnd = Wrap(rampStart + rampLen);
 
-            if (InRange(nowMin, nightMin, rampStart))
-            {
+            if (InRange(nowMin, nightTransEnd, rampStart))
                 return new ScheduleResult(_settings.NightKelvin, _settings.NightBrightness, SchedulePhase.Night, rampStart);
-            }
-            if (InRange(nowMin, rampStart, bedMin))
+            if (InRange(nowMin, rampStart, rampEnd))
             {
                 var p = Progress(nowMin, rampStart, rampLen);
                 return new ScheduleResult(
                     Lerp(_settings.NightKelvin, _settings.BedtimeKelvin, p),
                     LerpD(_settings.NightBrightness, _settings.BedtimeBrightness, p),
-                    SchedulePhase.RampToBedtime, bedMin);
+                    SchedulePhase.RampToBedtime, rampEnd);
             }
-            return new ScheduleResult(_settings.BedtimeKelvin, _settings.BedtimeBrightness, SchedulePhase.Bedtime, dayTransStart);
+            return new ScheduleResult(_settings.BedtimeKelvin, _settings.BedtimeBrightness, SchedulePhase.Bedtime, dayMin);
         }
-        return new ScheduleResult(_settings.NightKelvin, _settings.NightBrightness, SchedulePhase.Night, dayTransStart);
+        return new ScheduleResult(_settings.NightKelvin, _settings.NightBrightness, SchedulePhase.Night, dayMin);
     }
 
     private bool BedtimeIsActive(int dayMin, int nightMin)
