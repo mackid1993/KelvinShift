@@ -19,7 +19,6 @@ public partial class App : Application
     public static TrayIconService Tray { get; private set; } = null!;
 
     private static PreferencesWindow? _prefs;
-    private bool _startMinimized;
 
     // Single-instance enforcement. Second launch signals the existing
     // instance to surface its Preferences window, then exits.
@@ -91,8 +90,8 @@ public partial class App : Application
             args.SetObserved();
         };
 
+        // Always launch tray-only — click the tray icon to open Preferences.
         base.OnStartup(e);
-        _startMinimized = true; // always tray-only on launch — click the tray icon to open Preferences
 
         try
         {
