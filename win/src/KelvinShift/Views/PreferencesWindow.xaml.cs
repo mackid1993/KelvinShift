@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Data;
 using System.Windows.Input;
 using KelvinShift.Services;
 using KelvinShift.ViewModels;
@@ -64,5 +66,21 @@ public partial class PreferencesWindow : FluentWindow
         // Hide instead of close — Quit only via tray menu
         e.Cancel = true;
         Hide();
+    }
+
+    /// <summary>Commit a TextBox's binding when the user hits Enter so they
+    /// don't have to click out to apply the value. Bound to KeyDown on the
+    /// K-value TextBoxes via the XAML.</summary>
+    private void NumericTextBox_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        if (sender is not System.Windows.Controls.TextBox tb) return;
+        var be = tb.GetBindingExpression(System.Windows.Controls.TextBox.TextProperty);
+        be?.UpdateSource();
+        // Move focus off the textbox to give visual feedback that the value
+        // landed (slider thumb snaps, etc.). Returning focus to the parent
+        // keeps keyboard nav predictable.
+        Keyboard.ClearFocus();
+        e.Handled = true;
     }
 }

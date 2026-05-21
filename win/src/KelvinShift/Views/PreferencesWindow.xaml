@@ -57,7 +57,7 @@
                                     PreviewMouseLeftButtonUp="DayK_Up"
                                     Margin="8,0" FocusVisualStyle="{x:Null}"/>
                             <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <TextBox Text="{Binding Settings.DayKelvin, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="60" TextAlignment="Right"/>
+                                <TextBox Text="{Binding Settings.DayKelvin, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="60" TextAlignment="Right" KeyDown="NumericTextBox_KeyDown"/>
                                 <TextBlock Text=" K" VerticalAlignment="Center" Margin="2,0,0,0"/>
                             </StackPanel>
                         </Grid>
@@ -76,7 +76,7 @@
                                     PreviewMouseLeftButtonUp="NightK_Up"
                                     Margin="8,0" FocusVisualStyle="{x:Null}"/>
                             <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <TextBox Text="{Binding Settings.NightKelvin, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="60" TextAlignment="Right"/>
+                                <TextBox Text="{Binding Settings.NightKelvin, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="60" TextAlignment="Right" KeyDown="NumericTextBox_KeyDown"/>
                                 <TextBlock Text=" K" VerticalAlignment="Center" Margin="2,0,0,0"/>
                             </StackPanel>
                         </Grid>
@@ -95,7 +95,7 @@
                                     PreviewMouseLeftButtonUp="BedK_Up"
                                     Margin="8,0" FocusVisualStyle="{x:Null}"/>
                             <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <TextBox Text="{Binding Settings.BedtimeKelvin, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="60" TextAlignment="Right"/>
+                                <TextBox Text="{Binding Settings.BedtimeKelvin, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="60" TextAlignment="Right" KeyDown="NumericTextBox_KeyDown"/>
                                 <TextBlock Text=" K" VerticalAlignment="Center" Margin="2,0,0,0"/>
                             </StackPanel>
                         </Grid>
