@@ -357,14 +357,17 @@ final class ScheduleEngine {
         return min(1, Double(elapsed) / Double(max(1, length)))
     }
 
+    // Linear interpolation — constant rate of change so a fixed time
+    // slice always moves the same color delta no matter where in the
+    // ramp you are. (Previously a Hermite smoothstep, which is flat at
+    // both ends and made long-transition slices near 0 or 1 barely
+    // move the color even when the slider said you were well into it.)
     private func lerp(_ a: Int, _ b: Int, _ t: Double) -> Int {
-        let s = t * t * (3 - 2 * t)
-        return a + Int((Double(b - a) * s).rounded())
+        return a + Int((Double(b - a) * t).rounded())
     }
 
     private func lerpD(_ a: Double, _ b: Double, _ t: Double) -> Double {
-        let s = t * t * (3 - 2 * t)
-        return a + (b - a) * s
+        return a + (b - a) * t
     }
 
     private func minutesFromMidnight(_ date: Date) -> Int {
