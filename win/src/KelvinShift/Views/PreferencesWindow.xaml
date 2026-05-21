@@ -43,7 +43,7 @@
                     <StackPanel>
                         <TextBlock Text="🌡  Color Temperature" FontWeight="SemiBold" Margin="0,0,0,10"/>
 
-                        <Grid Height="32" Margin="0,0,0,4">
+                        <Grid Height="36" Margin="0,0,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
@@ -62,7 +62,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <Grid Height="32" Margin="0,8,0,4">
+                        <Grid Height="36" Margin="0,8,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
@@ -108,7 +108,7 @@
                     <StackPanel>
                         <TextBlock Text="☀  Brightness" FontWeight="SemiBold" Margin="0,0,0,10"/>
 
-                        <Grid Height="32" Margin="0,0,0,4">
+                        <Grid Height="36" Margin="0,0,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
@@ -126,7 +126,7 @@
                                        VerticalAlignment="Center" HorizontalAlignment="Right"/>
                         </Grid>
 
-                        <Grid Height="32" Margin="0,8,0,4">
+                        <Grid Height="36" Margin="0,8,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
@@ -286,7 +286,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Day↔Night" VerticalAlignment="Center" FontSize="11" Opacity="0.85"/>
                             <Slider Grid.Column="1"
-                                    Minimum="1" Maximum="120" TickFrequency="1" IsSnapToTickEnabled="True"
+                                    Minimum="1" Maximum="180" TickFrequency="1" IsSnapToTickEnabled="True"
                                     Value="{Binding Settings.TransitionMinutes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     VerticalAlignment="Center" Margin="8,0" FocusVisualStyle="{x:Null}"/>
                             <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right"
