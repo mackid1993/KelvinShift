@@ -2,7 +2,7 @@
 
 **Accurate Kelvin-based color temperature scheduling — macOS and Windows.**
 
-Set **exact Kelvin values** for daytime, nighttime, and (optional) bedtime display color temperatures, with automatic scheduling and smooth transitions. Unlike Night Shift or Windows Night Light, KelvinShift uses scientifically accurate blackbody radiation values (Redshift / CIE color matching, Ingo Thies 2013) so 2700 K really is 2700 K.
+Set **exact Kelvin values** for daytime, nighttime, and (optional) bedtime display color temperatures, with automatic scheduling and smooth transitions. KelvinShift uses scientifically accurate blackbody radiation values from the Redshift project (CIE color matching, Ingo Thies 2013) so 2700 K really is 2700 K.
 
 Made for personal use; sharing as-is with no support or warranty.
 
@@ -114,7 +114,7 @@ Both ports use the same 91-entry blackbody lookup table (1000 K – 10000 K, 100
 
 **macOS** — `CGSetDisplayTransferByTable` (CoreGraphics).
 
-**Windows** — `InternalSetDeviceGammaRamp` exported (undocumented) from `mscms.dll`. Two design choices keep shell UI flash-free:
+**Windows** — `InternalSetDeviceGammaRamp` exported from `mscms.dll`. Two design choices keep shell UI flash-free:
 
 1. **`InternalSetDeviceGammaRamp` instead of the public `SetDeviceGammaRamp`.** Resolved dynamically via `GetProcAddress` at startup; falls back to the public API if the symbol isn't present. Writing the LUT at this layer bypasses Windows' calibration-tracking reset on shell-flyout open and ignores the `GdiIcmGammaRange` registry cap.
 2. **Read-back-gated watchdog.** A dedicated `Highest`-priority thread runs a native `GetMessage` pump that hooks `WM_DISPLAYCHANGE`, `WM_WTSSESSION_CHANGE`, `WM_DEVICECHANGE`, `WM_POWERBROADCAST` (with `RegisterPowerSettingNotification`), `WM_DWMCOMPOSITIONCHANGED`, plus `SetWinEventHook` for object-show / system-sound events. On each event the watchdog reads the current GPU LUT via `GetDeviceGammaRamp` and only writes if it has drifted — unnecessary writes are themselves visible as flicker, so suppressing them is what keeps the display quiet. A 1-second heartbeat covers events the hooks miss.
@@ -141,9 +141,9 @@ See [CLAUDE.md](CLAUDE.md) for the full architectural notes (per-platform compon
 
 ## Troubleshooting
 
-**Colors don't change at all.** Another color-temp tool is owning the gamma ramp — only one can at a time. Disable Windows Night Light, f.lux, Iris, or macOS Night Shift.
+**Colors don't change at all.** Another color-temperature utility is already controlling the gamma ramp — only one can at a time. Disable any other tool (including the OS's built-in color shift feature) and restart KelvinShift.
 
-**Warm temps look clipped (Windows).** The installer should have written `GdiIcmGammaRange = 256` to HKLM. If you installed without admin, or this got removed, re-run the installer. (The undocumented `mscms` path mostly bypasses this anyway, but it's belt-and-suspenders for HDR fallback paths.)
+**Warm temps look clipped (Windows).** The installer should have written `GdiIcmGammaRange = 256` to HKLM. If you installed without admin, or this got removed, re-run the installer. (The `mscms` write path mostly bypasses this anyway, but it's belt-and-suspenders for HDR fallback paths.)
 
 **Tray icon missing on startup (Windows).** Right-click the taskbar → **Taskbar settings** → **Other system tray icons** → enable "KelvinShift".
 

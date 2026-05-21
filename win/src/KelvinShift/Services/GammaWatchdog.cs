@@ -7,9 +7,9 @@ namespace KelvinShift.Services;
 
 // Watchdog that re-applies gamma when external events nudge it.
 //
-// The shell-UI flash that Light Bulb and Iris exhibit happens because:
+// The shell-UI gamma flash happens because:
 //   1. Action Center / Settings open → DWM briefly resets per-output gamma
-//   2. The user sees the flash before any app reapplies
+//   2. Without an immediate reapply, the user sees a flash of base color
 //
 // Our defense: subscribe to every event that signals "something just touched
 // gamma" and reapply within ~50ms. The most important hook is

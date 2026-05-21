@@ -1,7 +1,7 @@
 // KelvinShift – GammaController.swift
 //
 // Direct gamma table manipulation for accurate color temperature control.
-// Uses CoreGraphics CGSetDisplayTransferByTable instead of Night Shift.
+// Uses CoreGraphics CGSetDisplayTransferByTable.
 //
 // Color temperature values are based on blackbody radiation calculations
 // from the Redshift project (Ingo Thies, 2013).

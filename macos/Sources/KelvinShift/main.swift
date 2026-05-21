@@ -1,5 +1,5 @@
 // KelvinShift – main.swift
-// macOS menu bar app for Kelvin-based Night Shift control.
+// macOS menu bar app for Kelvin-based color temperature control.
 
 import AppKit
 

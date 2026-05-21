@@ -154,7 +154,7 @@ public sealed class GammaService : IDisposable
         }
     }
 
-    // Primary write path: undocumented mscms!InternalSetDeviceGammaRamp.
+    // Primary write path: mscms!InternalSetDeviceGammaRamp.
     // SetDeviceGammaRamp goes through Windows' application-calibration
     // tracking, which the kernel resets on shell-flyout open (Action Center,
     // Settings, UAC) — that's the visible flash. The Internal* variant
@@ -203,9 +203,9 @@ public sealed class GammaService : IDisposable
         try
         {
             var ptr = pin.AddrOfPinnedObject();
-            // Retry loop — some buggy drivers fail the first call but succeed
-            // on the second (per Redshift's experience). Prefer the kernel
-            // path; fall back to the documented one if Internal* isn't there.
+            // Retry loop — some drivers fail the first call but succeed
+            // on the second. Prefer the kernel path; fall back to the
+            // documented one if Internal* isn't there.
             var ok = false;
             for (var attempt = 0; attempt < 3 && !ok; attempt++)
             {
