@@ -78,20 +78,13 @@ final class StatusBarController {
         // ── Status bar button ──────────────────────────
         if let btn = statusItem.button {
             if !s.enabled {
-                btn.title = "○ Off"
+                btn.image = symbolImage("power.circle")
+                btn.title = " Off"
             } else {
-                let icon: String = {
-                    switch s.phase {
-                    case .day:               return "☀"
-                    case .night:             return "☾"
-                    case .transitionToNight: return "☀→☾"
-                    case .transitionToDay:   return "☾→☀"
-                    case .rampToBedtime:     return "☾→🛏"
-                    case .bedtime:           return "🛏"
-                    }
-                }()
-                btn.title = "\(icon) \(s.currentKelvin)K"
+                btn.image = symbolImage(phaseSymbol(s.phase))
+                btn.title = " \(s.currentKelvin)K"
             }
+            btn.imagePosition = .imageLeading
             btn.font = NSFont.monospacedDigitSystemFont(ofSize: 0, weight: .regular)
         }
 
@@ -102,25 +95,49 @@ final class StatusBarController {
 
         miCurrent.title  = "Current: \(s.currentKelvin) K  ·  \(currentBrtPct)%"
         miPhase.title    = phaseLabel(s.phase)
-        miDay.title      = "☀  Day:     \(s.dayKelvin) K  ·  \(dayBrtPct)%"
-        miNight.title    = "☾  Night:   \(s.nightKelvin) K  ·  \(nightBrtPct)%"
+        miPhase.image    = symbolImage(phaseSymbol(s.phase))
+
+        miDay.title      = "Day:     \(s.dayKelvin) K  ·  \(dayBrtPct)%"
+        miDay.image      = symbolImage("sun.max")
+        miNight.title    = "Night:   \(s.nightKelvin) K  ·  \(nightBrtPct)%"
+        miNight.image    = symbolImage("moon")
 
         let bedBrtPct = Int((s.bedtimeBrightness * 100).rounded())
-        miBedtime.title    = "🛏  Bedtime: \(s.bedtimeKelvin) K  ·  \(bedBrtPct)%"
+        miBedtime.title    = "Bedtime: \(s.bedtimeKelvin) K  ·  \(bedBrtPct)%"
+        miBedtime.image    = symbolImage("bed.double")
         miBedtime.isHidden = !s.bedtimeEnabled
 
         miSchedule.title = scheduleLabel(s)
         miEnabled.state  = s.enabled ? .on : .off
     }
 
+    private func phaseSymbol(_ p: SchedulePhase) -> String {
+        switch p {
+        case .day:               return "sun.max"
+        case .night:             return "moon"
+        case .transitionToNight: return "moon"        // heading to night
+        case .transitionToDay:   return "sun.max"     // heading to day
+        case .rampToBedtime:     return "bed.double"  // heading to bedtime
+        case .bedtime:           return "bed.double"
+        }
+    }
+
+    private func symbolImage(_ name: String) -> NSImage? {
+        let cfg = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+        let img = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(cfg)
+        img?.isTemplate = true
+        return img
+    }
+
     private func phaseLabel(_ p: SchedulePhase) -> String {
         switch p {
-        case .day:               return "☀  Daytime"
-        case .night:             return "☾  Nighttime"
-        case .transitionToNight: return "☀→☾  Transitioning to Night"
-        case .transitionToDay:   return "☾→☀  Transitioning to Day"
-        case .rampToBedtime:     return "☾→🛏  Ramping to Bedtime"
-        case .bedtime:           return "🛏  Bedtime"
+        case .day:               return "Daytime"
+        case .night:             return "Nighttime"
+        case .transitionToNight: return "Transitioning to Night"
+        case .transitionToDay:   return "Transitioning to Day"
+        case .rampToBedtime:     return "Ramping to Bedtime"
+        case .bedtime:           return "Bedtime"
         }
     }
 
@@ -130,10 +147,10 @@ final class StatusBarController {
             let f = DateFormatter(); f.timeStyle = .short
             let r = s.sunriseTime.map { f.string(from: $0) } ?? "–"
             let t = s.sunsetTime.map  { f.string(from: $0) } ?? "–"
-            let bed = set.bedtimeEnabled ? "  🛏\(set.bedtimeTimeLabel)" : ""
+            let bed = set.bedtimeEnabled ? "  ·  Bed \(set.bedtimeTimeLabel)" : ""
             return "Schedule: Solar  ↑\(r)  ↓\(t)\(bed)"
         }
-        let bed = set.bedtimeEnabled ? " · 🛏\(set.bedtimeTimeLabel)" : ""
+        let bed = set.bedtimeEnabled ? "  ·  Bed \(set.bedtimeTimeLabel)" : ""
         return "Schedule: \(set.dayTimeLabel) – \(set.nightTimeLabel)\(bed)"
     }
 

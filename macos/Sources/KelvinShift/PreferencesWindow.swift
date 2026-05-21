@@ -5,17 +5,26 @@ import SwiftUI
 
 // MARK: – Window controller
 
-final class PreferencesWindowController: NSWindowController {
+final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     convenience init() {
         let view = PreferencesView()
         let hc = NSHostingController(rootView: view)
         let win = NSWindow(contentViewController: hc)
         win.title = "KelvinShift Preferences"
-        win.styleMask = [.titled, .closable]
-        win.setContentSize(NSSize(width: 460, height: 940))
+        win.styleMask = [.titled, .closable, .resizable]
+        win.setContentSize(NSSize(width: 460, height: 640))
+        win.contentMinSize = NSSize(width: 460, height: 360)
         win.center()
         win.isReleasedWhenClosed = false
         self.init(window: win)
+        win.delegate = self
+    }
+
+    // If the user hides this window (or Cmd-tabs) while a slider drag is
+    // somehow still latched, cancel preview so subsequent settings
+    // changes apply immediately rather than waiting for the 15s tick.
+    func windowDidResignKey(_ notification: Notification) {
+        ScheduleEngine.current?.stopPreview()
     }
 }
 
@@ -38,6 +47,7 @@ struct PreferencesView: View {
     @State private var demoProgress: Double = 0.0
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 16) {
 
             // ── Color Temperature ──────────────────────
@@ -46,9 +56,6 @@ struct PreferencesView: View {
                     dayKelvinRow
                     nightKelvinRow
                     if s.bedtimeEnabled { bedKelvinRow }
-
-                    Text("Day 5000–6500 K  ·  Night 2200–3000 K  ·  Bed enabled below")
-                        .font(.caption).foregroundColor(.secondary)
 
                     previewingIndicator
                 }
@@ -116,14 +123,8 @@ struct PreferencesView: View {
                                 .font(.caption).foregroundColor(.red)
                         }
                     } else {
-                        HStack(spacing: 16) {
-                            labelled("Day starts") {
-                                hourPicker($s.customDayHour, $s.customDayMinute)
-                            }
-                            labelled("Night starts") {
-                                hourPicker($s.customNightHour, $s.customNightMinute)
-                            }
-                        }
+                        timeRow("Day starts",   hour: $s.customDayHour,   minute: $s.customDayMinute)
+                        timeRow("Night starts", hour: $s.customNightHour, minute: $s.customNightMinute)
                     }
 
                     Divider().padding(.vertical, 4)
@@ -132,11 +133,7 @@ struct PreferencesView: View {
                         Label("Enable bedtime ramp", systemImage: "bed.double")
                     }
                     if s.bedtimeEnabled {
-                        HStack(spacing: 16) {
-                            labelled("Bedtime") {
-                                hourPicker($s.bedtimeHour, $s.bedtimeMinute)
-                            }
-                        }
+                        timeRow("Bedtime", hour: $s.bedtimeHour, minute: $s.bedtimeMinute)
                         Text("After the night setting is reached, the display ramps to the Bed temperature/brightness above. Ramp duration is under Transitions.")
                             .font(.caption).foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -155,7 +152,7 @@ struct PreferencesView: View {
                         TextField("", value: $s.transitionMinutes, format: .number)
                             .frame(width: 60)
                         Text("min")
-                        Stepper("", value: $s.transitionMinutes, in: 1...600, step: 5).labelsHidden()
+                        Stepper("", value: $s.transitionMinutes, in: 1...180, step: 5).labelsHidden()
                     }
 
                     if s.bedtimeEnabled {
@@ -214,10 +211,11 @@ struct PreferencesView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Spacer()
         }
         .padding()
-        .frame(width: 460, height: 940)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(minWidth: 460)
         // Observe Kelvin changes to drive preview while slider is held
         .onChange(of: s.dayKelvin) { newVal in
             if previewingSlider == "day" {
@@ -256,12 +254,12 @@ struct PreferencesView: View {
     private var dayKelvinRow: some View {
         HStack {
             Text("Day:").frame(width: 46, alignment: .trailing)
-            TextField("", value: $s.dayKelvin, format: .number)
+            TextField("", value: $s.dayKelvin, format: .number.grouping(.never))
                 .frame(width: 60)
             Text("K")
-            Stepper("", value: $s.dayKelvin, in: 2000...6500, step: 100).labelsHidden()
+            Stepper("", value: $s.dayKelvin, in: 1000...6500, step: 100).labelsHidden()
             Slider(value: dayKelvinDouble,
-                   in: 2000...6500, step: 100)
+                   in: 1000...6500, step: 100)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 0)
                         .updating($isDaySliderPressed) { _, state, _ in
@@ -283,12 +281,12 @@ struct PreferencesView: View {
     private var nightKelvinRow: some View {
         HStack {
             Text("Night:").frame(width: 46, alignment: .trailing)
-            TextField("", value: $s.nightKelvin, format: .number)
+            TextField("", value: $s.nightKelvin, format: .number.grouping(.never))
                 .frame(width: 60)
             Text("K")
-            Stepper("", value: $s.nightKelvin, in: 1800...5500, step: 100).labelsHidden()
+            Stepper("", value: $s.nightKelvin, in: 1000...6500, step: 100).labelsHidden()
             Slider(value: nightKelvinDouble,
-                   in: 1800...5500, step: 100)
+                   in: 1000...6500, step: 100)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 0)
                         .updating($isNightSliderPressed) { _, state, _ in
@@ -362,11 +360,11 @@ struct PreferencesView: View {
     private var bedKelvinRow: some View {
         HStack {
             Text("Bed:").frame(width: 46, alignment: .trailing)
-            TextField("", value: $s.bedtimeKelvin, format: .number)
+            TextField("", value: $s.bedtimeKelvin, format: .number.grouping(.never))
                 .frame(width: 60)
             Text("K")
-            Stepper("", value: $s.bedtimeKelvin, in: 1000...4000, step: 100).labelsHidden()
-            Slider(value: bedKelvinDouble, in: 1000...4000, step: 100)
+            Stepper("", value: $s.bedtimeKelvin, in: 1000...6500, step: 100).labelsHidden()
+            Slider(value: bedKelvinDouble, in: 1000...6500, step: 100)
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 0)
                         .updating($isBedKSliderPressed) { _, state, _ in
@@ -411,14 +409,16 @@ struct PreferencesView: View {
         }
     }
 
+    @ViewBuilder
     private var previewingIndicator: some View {
-        HStack(spacing: 4) {
-            Image(systemName: "eye.fill")
-            Text("Previewing on display — release slider to return to schedule")
+        if previewingSlider != nil {
+            HStack(spacing: 4) {
+                Image(systemName: "eye.fill")
+                Text("Previewing on display — release slider to return to schedule")
+            }
+            .font(.caption)
+            .foregroundColor(.orange)
         }
-        .font(.caption)
-        .foregroundColor(.orange)
-        .opacity(previewingSlider != nil ? 1 : 0)
     }
 
     // MARK: – Sub-views
@@ -431,24 +431,24 @@ struct PreferencesView: View {
         }
     }
 
+    /// Time-picker row with a fixed-width trailing-aligned label so
+    /// "Day starts" / "Night starts" / "Bedtime" line up vertically.
+    @ViewBuilder
+    private func timeRow(_ label: String,
+                         hour: Binding<Int>,
+                         minute: Binding<Int>) -> some View {
+        HStack(spacing: 8) {
+            Text(label + ":")
+                .foregroundColor(.secondary)
+                .frame(width: 100, alignment: .trailing)
+            hourPicker(hour, minute)
+            Spacer(minLength: 0)
+        }
+    }
+
     @ViewBuilder
     private func hourPicker(_ hour: Binding<Int>, _ minute: Binding<Int>) -> some View {
-        let dateBinding = Binding<Date>(
-            get: {
-                var components = DateComponents()
-                components.hour = hour.wrappedValue
-                components.minute = minute.wrappedValue
-                return Calendar.current.date(from: components) ?? Date()
-            },
-            set: { newDate in
-                let components = Calendar.current.dateComponents([.hour, .minute], from: newDate)
-                hour.wrappedValue = components.hour ?? 0
-                minute.wrappedValue = components.minute ?? 0
-            }
-        )
-        DatePicker("", selection: dateBinding, displayedComponents: .hourAndMinute)
-            .labelsHidden()
-            .frame(width: 100)
+        TimeField(hour: hour, minute: minute)
     }
 
     // MARK: – Binding adapters
@@ -541,4 +541,75 @@ struct ProgressIndicator: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSProgressIndicator, context: Context) {}
+}
+
+// MARK: - Time Field
+//
+// Pure-SwiftUI replacement for DatePicker(hourAndMinute). The native
+// NSDatePicker clips the AM/PM glyph; an NSDatePicker wrapper fixed
+// that but injected an AppKit visual style that didn't match the
+// rest of the form. This rebuilds the same hh:mm AM/PM affordance
+// out of standard TextField + Picker so the style matches the K and
+// brightness rows. Stores 24-hour internally (binding is unchanged).
+
+struct TimeField: View {
+    @Binding var hour: Int    // 0-23
+    @Binding var minute: Int  // 0-59
+
+    private var hour12: Binding<Int> {
+        Binding(
+            get: {
+                let h = hour
+                if h == 0 { return 12 }
+                if h > 12 { return h - 12 }
+                return h
+            },
+            set: { newH in
+                let pm = hour >= 12
+                let clamped = max(1, min(12, newH))
+                let h24 = clamped == 12 ? 0 : clamped
+                hour = h24 + (pm ? 12 : 0)
+            }
+        )
+    }
+
+    private var isPM: Binding<Bool> {
+        Binding(
+            get: { hour >= 12 },
+            set: { pm in
+                let h12 = (hour % 12 == 0) ? 12 : (hour % 12)
+                let h24 = h12 == 12 ? 0 : h12
+                hour = h24 + (pm ? 12 : 0)
+            }
+        )
+    }
+
+    private var minutePadded: Binding<String> {
+        Binding(
+            get: { String(format: "%02d", minute) },
+            set: { newVal in
+                let digits = newVal.filter(\.isNumber)
+                let v = Int(digits) ?? 0
+                minute = max(0, min(59, v))
+            }
+        )
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            TextField("", value: hour12, format: .number.grouping(.never))
+                .frame(width: 30)
+                .multilineTextAlignment(.trailing)
+            Text(":")
+            TextField("", text: minutePadded)
+                .frame(width: 30)
+                .multilineTextAlignment(.leading)
+            Picker("", selection: isPM) {
+                Text("AM").tag(false)
+                Text("PM").tag(true)
+            }
+            .labelsHidden()
+            .frame(width: 70)
+        }
+    }
 }
