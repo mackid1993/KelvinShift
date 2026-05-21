@@ -68,6 +68,20 @@ public partial class PreferencesWindow : FluentWindow
         Hide();
     }
 
+    protected override void OnDeactivated(System.EventArgs e)
+    {
+        base.OnDeactivated(e);
+        // If the user hides this window (or alt-tabs) while holding a
+        // slider, PreviewMouseLeftButtonUp may never fire — the engine's
+        // preview-guard would stay latched and every Tick would bail,
+        // making subsequent setting changes look like they don't take
+        // effect until the 15-second timer eventually clears something.
+        // Cancel preview unconditionally on deactivate so settings always
+        // re-apply immediately.
+        _pressedSlider = null;
+        try { Vm.Engine.StopPreview(); } catch { }
+    }
+
     /// <summary>Commit a TextBox's binding when the user hits Enter so they
     /// don't have to click out to apply the value.</summary>
     private void NumericTextBox_KeyDown(object sender, KeyEventArgs e)

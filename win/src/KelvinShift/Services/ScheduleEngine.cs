@@ -229,27 +229,42 @@ public sealed class ScheduleEngine
     public ScheduleResult ComputeSchedule(DateTime now)
     {
         // "Day starts" / "Night starts" / "Bedtime" are the times at which
-        // the screen REACHES that state. The transition runs for
-        // tranMin minutes BEFORE the scheduled time and finishes exactly
-        // at it. (At "Day starts 9:30" you've arrived at full day; the
-        // ramp ran 6:30→9:30 with a 180-min transition.) Same semantic
-        // as the macOS port.
+        // the screen REACHES that state. The transition runs for tranMin
+        // minutes BEFORE the scheduled time and finishes exactly at it.
+        // Each transition's effective length is capped to the available
+        // window between adjacent scheduled times — otherwise tight
+        // schedules (e.g. Day=9:30, Night=10:00 with 180-min transition)
+        // would make the wraparound Full-Day check swallow the rest of
+        // the day.
         var (dayMin, nightMin, _, _) = ScheduleTimes(now);
         var nowMin = MinutesFromMidnight(now);
         var tranMin = _settings.TransitionMinutes;
-        var nightTransStart = Wrap(nightMin - tranMin);
-        var dayTransStart   = Wrap(dayMin   - tranMin);
 
         var useBedtime = BedtimeIsActive(dayMin, nightMin);
         var bedMin = Wrap(_settings.BedtimeHour * 60 + _settings.BedtimeMinute);
         var morningFromK = useBedtime ? _settings.BedtimeKelvin     : _settings.NightKelvin;
         var morningFromB = useBedtime ? _settings.BedtimeBrightness : _settings.NightBrightness;
 
+        // Gap from each anchor to the next, going forward in clock order.
+        var dayToNight = Wrap(nightMin - dayMin);
+        var nightToBed = useBedtime ? Wrap(bedMin - nightMin) : 0;
+        var bedOrNightToDay = useBedtime ? Wrap(dayMin - bedMin)
+                                         : Wrap(dayMin - nightMin);
+
+        var nightTransLen = Math.Min(tranMin, dayToNight);
+        var dayTransLen   = Math.Min(tranMin, bedOrNightToDay);
+        var rampLen       = useBedtime
+            ? Math.Min(_settings.BedtimeRampMinutes, nightToBed)
+            : 0;
+
+        var nightTransStart = Wrap(nightMin - nightTransLen);
+        var dayTransStart   = Wrap(dayMin   - dayTransLen);
+
         if (InRange(nowMin, dayMin, nightTransStart))
             return new ScheduleResult(_settings.DayKelvin, _settings.DayBrightness, SchedulePhase.Day, nightTransStart);
         if (InRange(nowMin, nightTransStart, nightMin))
         {
-            var p = Progress(nowMin, nightTransStart, tranMin);
+            var p = Progress(nowMin, nightTransStart, nightTransLen);
             return new ScheduleResult(
                 Lerp(_settings.DayKelvin, _settings.NightKelvin, p),
                 LerpD(_settings.DayBrightness, _settings.NightBrightness, p),
@@ -257,7 +272,7 @@ public sealed class ScheduleEngine
         }
         if (InRange(nowMin, dayTransStart, dayMin))
         {
-            var p = Progress(nowMin, dayTransStart, tranMin);
+            var p = Progress(nowMin, dayTransStart, dayTransLen);
             return new ScheduleResult(
                 Lerp(morningFromK, _settings.DayKelvin, p),
                 LerpD(morningFromB, _settings.DayBrightness, p),
@@ -266,14 +281,7 @@ public sealed class ScheduleEngine
         // Past nightMin, before dayTransStart.
         if (useBedtime)
         {
-            // Bedtime ramp runs for bedtimeRampMinutes BEFORE the
-            // configured bedtime, finishing at it. Clamped to the
-            // night→bedtime window so an over-long ramp just starts
-            // at night-start.
-            var nightToBed = Wrap(bedMin - nightMin);
-            var rampLen = Math.Min(_settings.BedtimeRampMinutes, nightToBed);
             var rampStart = Wrap(bedMin - rampLen);
-
             if (InRange(nowMin, nightMin, rampStart))
                 return new ScheduleResult(_settings.NightKelvin, _settings.NightBrightness, SchedulePhase.Night, rampStart);
             if (InRange(nowMin, rampStart, bedMin))
