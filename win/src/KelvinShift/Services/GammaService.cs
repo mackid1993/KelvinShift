@@ -1,25 +1,28 @@
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace KelvinShift.Services;
 
-// Applies color temperature via the WDDM kernel-mode gamma path
-// (D3DKMTSetGammaRamp), not the legacy SetDeviceGammaRamp that Light Bulb
-// uses. The kernel path is what f.lux and CareUEyes use — it bypasses the
-// GDI gamma-validation/reset behaviors that cause visible flashes when
-// shell surfaces (Action Center, Settings, UAC) compose.
+// Applies color temperature via the gamma ramp at the GPU output stage.
+// Cursor (hardware overlay) and screenshots (pre-compositor BitBlt) both
+// see the warm shift, so cursor stays correctly tinted and captures
+// remain clean regardless of which screenshot tool / hotkey is used.
 //
-// Color math uses the 91-entry Redshift blackbody table (CIE color matching,
-// Ingo Thies 2013), interpolated 100K → any K. D65 white point at 6500K.
-// Identical to macos/Sources/KelvinShift/GammaController.swift.
+// Write strategy: stable ramp (no rotating offset) + read-back check
+// before each watchdog reapply. The watchdog only writes when the GPU
+// LUT actually deviates from what we want — this is what keeps the
+// display calm. Every unnecessary SetDeviceGammaRamp call disturbs the
+// GPU LUT and is itself visible as flicker; suppressing them eliminates
+// the self-inflicted flicker that the event-driven approach would
+// otherwise produce.
+//
+// Color math: 91-entry Redshift blackbody table (CIE matching, Ingo
+// Thies 2013). D65 at 6500K. Identical to macOS port.
 public sealed class GammaService : IDisposable
 {
-    private readonly List<AdapterEntry> _adapters = new();
-    private bool _adaptersValid;
     private readonly ushort[] _ramp = new ushort[768]; // R[0..255], G[256..511], B[512..767]
-    private byte _rotatingOffset; // defeats driver caching of identical ramps
+    private readonly ushort[] _probeBuffer = new ushort[768];
 
     private int _currentKelvin = 6500;
     private double _currentBrightness = 1.0;
@@ -28,66 +31,120 @@ public sealed class GammaService : IDisposable
     public int CurrentKelvin => _currentKelvin;
     public double CurrentBrightness => _currentBrightness;
 
+    private static readonly string LogPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "KelvinShift", "debug.log");
+    private const long MaxLogBytes = 256 * 1024;
+    private bool _loggedFirstSuccess;
+
+    private static void Log(string msg)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+            var fi = new FileInfo(LogPath);
+            if (fi.Exists && fi.Length > MaxLogBytes)
+            {
+                var rotated = LogPath + ".old";
+                try { File.Delete(rotated); } catch { }
+                try { File.Move(LogPath, rotated); } catch { }
+            }
+            File.AppendAllText(LogPath, $"{DateTime.Now:HH:mm:ss.fff} [gamma] {msg}\n");
+        }
+        catch { }
+    }
+
     public bool ApplyKelvin(int kelvin) => ApplyKelvinWithBrightness(kelvin, 1.0);
+
+    private readonly object _writeLock = new();
 
     public bool ApplyKelvinWithBrightness(int kelvin, double brightness)
     {
         var k = Math.Clamp(kelvin, 1000, 10000);
         var b = Math.Clamp(brightness, 0.1, 1.0);
-
         if (_hasApplied && k == _currentKelvin && Math.Abs(b - _currentBrightness) < 0.001)
             return true;
-
         _currentKelvin = k;
         _currentBrightness = b;
-
         var rgb = KelvinToRgb(k);
-        BuildRamp(rgb.R * (float)b, rgb.G * (float)b, rgb.B * (float)b);
-        var ok = WriteRamp();
-        if (ok) _hasApplied = true;
-        return ok;
+        lock (_writeLock)
+        {
+            BuildRamp(rgb.R * (float)b, rgb.G * (float)b, rgb.B * (float)b);
+            WriteRamp();
+        }
+        _hasApplied = true;
+        return true;
     }
 
+    /// <summary>Re-write the gamma ramp ONLY if the current GPU LUT has
+    /// drifted from what we expect. The watchdog fires this on every
+    /// shell event; without the read-back, we'd spam SetDeviceGammaRamp
+    /// hundreds of times per minute even when Windows hasn't touched the
+    /// LUT — and each unnecessary write is itself visible as flicker.</summary>
     public bool Reapply()
     {
         if (!_hasApplied) return true;
-        var rgb = KelvinToRgb(_currentKelvin);
-        BuildRamp(rgb.R * (float)_currentBrightness, rgb.G * (float)_currentBrightness, rgb.B * (float)_currentBrightness);
-        return WriteRamp();
+        lock (_writeLock)
+        {
+            if (!GammaMatchesExpected())
+            {
+                WriteRamp();
+            }
+            return true;
+        }
     }
 
-    public void InvalidateAdapters()
+    private bool GammaMatchesExpected()
     {
-        CloseAdapters();
-        _adaptersValid = false;
+        var hdc = GetDC(IntPtr.Zero);
+        if (hdc == IntPtr.Zero) return true;  // assume OK rather than spam writes
+        var pin = GCHandle.Alloc(_probeBuffer, GCHandleType.Pinned);
+        try
+        {
+            if (!GetDeviceGammaRamp(hdc, pin.AddrOfPinnedObject())) return true;
+        }
+        finally
+        {
+            pin.Free();
+            ReleaseDC(IntPtr.Zero, hdc);
+        }
+        // Sample mid-points of each channel — covers the case where Windows
+        // resets to identity (mid = 0x8000) while still cheap to check.
+        // Tolerance ±256 / 65535 absorbs floating-point quantization in our
+        // ramp build, so the threshold only trips on real resets.
+        const int tol = 256;
+        return Math.Abs(_probeBuffer[128] - _ramp[128]) <= tol
+            && Math.Abs(_probeBuffer[256 + 128] - _ramp[256 + 128]) <= tol
+            && Math.Abs(_probeBuffer[512 + 128] - _ramp[512 + 128]) <= tol;
     }
+
+    public void InvalidateAdapters() { /* fresh HDC per write — nothing to invalidate */ }
 
     public void Reset()
     {
         _currentKelvin = 6500;
         _currentBrightness = 1.0;
         _hasApplied = false;
-        BuildRamp(1f, 1f, 1f);
-        WriteRamp();
+        lock (_writeLock)
+        {
+            BuildRamp(1f, 1f, 1f);
+            WriteRamp();
+        }
     }
 
-    public void Dispose()
-    {
-        // Do not reset gamma on dispose — when contexts become invalidated this
-        // flickers. The app's own Quit path explicitly calls Reset() first.
-        CloseAdapters();
-    }
+    public void OnSystemColorPipelineToggled() { /* single path — toggle is a no-op */ }
+
+    public void Dispose() { }
 
     // ── Ramp construction ─────────────────────────────────
 
     private void BuildRamp(float r, float g, float b)
     {
-        // Cycle 0..4 so consecutive identical writes still differ in one byte —
-        // some display drivers ignore SetGammaRamp calls with an unchanged ramp
-        // even after an external entity (lock screen, HDR toggle) reset it.
-        _rotatingOffset = (byte)((_rotatingOffset + 1) % 5);
-        var off = _rotatingOffset;
-
+        // Stable ramp — no per-write perturbation. Driver-side caching of
+        // identical ramps used to be a problem the rotating offset solved,
+        // but the read-back check in Reapply already gates writes to only
+        // when the LUT has actually deviated, so identical successive
+        // writes never happen at our layer.
         for (var i = 0; i < 256; i++)
         {
             var t = i / 255f;
@@ -95,91 +152,93 @@ public sealed class GammaService : IDisposable
             _ramp[i + 256] = (ushort)Math.Clamp((int)(t * g * 65535f), 0, 65535);
             _ramp[i + 512] = (ushort)Math.Clamp((int)(t * b * 65535f), 0, 65535);
         }
-        // perturb last sample of each channel
-        _ramp[255] = (ushort)Math.Clamp(_ramp[255] + off, 0, 65535);
-        _ramp[511] = (ushort)Math.Clamp(_ramp[511] + off, 0, 65535);
-        _ramp[767] = (ushort)Math.Clamp(_ramp[767] + off, 0, 65535);
+    }
+
+    // Primary write path: undocumented mscms!InternalSetDeviceGammaRamp.
+    // SetDeviceGammaRamp goes through Windows' application-calibration
+    // tracking, which the kernel resets on shell-flyout open (Action Center,
+    // Settings, UAC) — that's the visible flash. The Internal* variant
+    // writes the gamma at a layer Windows doesn't touch on those events,
+    // and bypasses the GdiIcmGammaRange registry cap so warm temperatures
+    // work without the install-time HKLM tweak.
+    //
+    // Three-arg signature (hdc, ramp, dwReserved=0).
+    //
+    // Resolved from mscms.dll at startup; falls back to the public API
+    // when the symbol isn't exported (older Windows, Wine, etc.).
+    [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true)]
+    private delegate bool InternalSetGammaDelegate(IntPtr hDC, IntPtr lpRamp, uint dwReserved);
+    private static readonly InternalSetGammaDelegate? _internalSetGamma = LoadInternalSetGamma();
+
+    private static InternalSetGammaDelegate? LoadInternalSetGamma()
+    {
+        // mscms.dll is where this symbol lives — gdi32 doesn't export it,
+        // even though there's a similarly-named D3DKMT family there.
+        foreach (var dll in new[] { "mscms.dll", "gdi32.dll" })
+        {
+            try
+            {
+                var h = LoadLibraryW(dll);
+                if (h == IntPtr.Zero) continue;
+                var p = GetProcAddress(h, "InternalSetDeviceGammaRamp");
+                if (p == IntPtr.Zero) continue;
+                Log($"resolved InternalSetDeviceGammaRamp from {dll}");
+                return Marshal.GetDelegateForFunctionPointer<InternalSetGammaDelegate>(p);
+            }
+            catch { }
+        }
+        return null;
     }
 
     private bool WriteRamp()
     {
-        EnsureAdapters();
-        if (_adapters.Count == 0) return false;
+        var hdc = GetDC(IntPtr.Zero);
+        if (hdc == IntPtr.Zero)
+        {
+            Log("GetDC(NULL) returned 0");
+            return false;
+        }
 
         var pin = GCHandle.Alloc(_ramp, GCHandleType.Pinned);
         try
         {
             var ptr = pin.AddrOfPinnedObject();
-            var allOk = true;
-            foreach (var a in _adapters)
+            // Retry loop — some buggy drivers fail the first call but succeed
+            // on the second (per Redshift's experience). Prefer the kernel
+            // path; fall back to the documented one if Internal* isn't there.
+            var ok = false;
+            for (var attempt = 0; attempt < 3 && !ok; attempt++)
             {
-                var info = new D3DKMT_SETGAMMARAMP
-                {
-                    hDevice = a.HAdapter,
-                    VidPnSourceId = a.VidPnSourceId,
-                    Type = D3DDDI_GAMMARAMP_TYPE.RGB256x3x16,
-                    pGammaRamp = ptr,
-                    Size = 1536, // 256 * 2 bytes * 3 channels
-                };
-                var status = D3DKMTSetGammaRamp(ref info);
-                if (status != 0)
-                {
-                    Debug.WriteLine($"[KelvinShift] D3DKMTSetGammaRamp failed: 0x{status:X8} on adapter {a.Device}");
-                    allOk = false;
-                }
+                ok = _internalSetGamma is not null
+                    ? _internalSetGamma(hdc, ptr, 0)
+                    : SetDeviceGammaRamp(hdc, ptr);
             }
-            return allOk;
+
+            if (!ok)
+            {
+                var err = Marshal.GetLastWin32Error();
+                Log($"gamma write failed (Win32 err={err}, path={(_internalSetGamma is not null ? "internal" : "public")})");
+            }
+            else if (!_loggedFirstSuccess)
+            {
+                var path = _internalSetGamma is not null ? "InternalSetDeviceGammaRamp" : "SetDeviceGammaRamp";
+                Log($"{path} OK rampSample=[R0={_ramp[0]} R128={_ramp[128]} R255={_ramp[255]} G128={_ramp[256+128]} B128={_ramp[512+128]}]");
+                _loggedFirstSuccess = true;
+            }
+            return ok;
         }
         finally
         {
             pin.Free();
+            ReleaseDC(IntPtr.Zero, hdc);
         }
     }
 
-    // ── Adapter enumeration ───────────────────────────────
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadLibraryW(string lpFileName);
 
-    private void EnsureAdapters()
-    {
-        if (_adaptersValid) return;
-        CloseAdapters();
-        var found = new List<AdapterEntry>();
-
-        bool Enum(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprc, IntPtr data)
-        {
-            var info = new MONITORINFOEX { cbSize = Marshal.SizeOf<MONITORINFOEX>() };
-            if (!GetMonitorInfo(hMonitor, ref info)) return true;
-
-            var hdc = CreateDC("DISPLAY", info.szDevice, null, IntPtr.Zero);
-            if (hdc == IntPtr.Zero) return true;
-            try
-            {
-                var open = new D3DKMT_OPENADAPTERFROMHDC { hDc = hdc };
-                var status = D3DKMTOpenAdapterFromHdc(ref open);
-                if (status == 0)
-                    found.Add(new AdapterEntry(open.hAdapter, open.VidPnSourceId, info.szDevice));
-                else
-                    Debug.WriteLine($"[KelvinShift] D3DKMTOpenAdapterFromHdc failed for {info.szDevice}: 0x{status:X8}");
-            }
-            finally { DeleteDC(hdc); }
-            return true;
-        }
-
-        EnumDisplayMonitors(IntPtr.Zero, IntPtr.Zero, Enum, IntPtr.Zero);
-        _adapters.AddRange(found);
-        _adaptersValid = true;
-    }
-
-    private void CloseAdapters()
-    {
-        foreach (var a in _adapters)
-        {
-            var close = new D3DKMT_CLOSEADAPTER { hAdapter = a.HAdapter };
-            D3DKMTCloseAdapter(ref close);
-        }
-        _adapters.Clear();
-    }
-
-    private readonly record struct AdapterEntry(uint HAdapter, uint VidPnSourceId, string Device);
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi, SetLastError = true)]
+    private static extern IntPtr GetProcAddress(IntPtr hModule, [MarshalAs(UnmanagedType.LPStr)] string lpProcName);
 
     // ── Blackbody table (Redshift / CIE, Ingo Thies 2013) ─
 
@@ -298,72 +357,17 @@ public sealed class GammaService : IDisposable
 
     // ── Native interop ────────────────────────────────────
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct LUID { public uint Low; public int High; }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct D3DKMT_OPENADAPTERFROMHDC
-    {
-        public IntPtr hDc;
-        public uint hAdapter;
-        public LUID AdapterLuid;
-        public uint VidPnSourceId;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct D3DKMT_CLOSEADAPTER { public uint hAdapter; }
-
-    private enum D3DDDI_GAMMARAMP_TYPE
-    {
-        Uninitialized = 0,
-        Default = 1,
-        RGB256x3x16 = 2,
-        DXGI_1 = 3,
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct D3DKMT_SETGAMMARAMP
-    {
-        public uint hDevice;
-        public uint VidPnSourceId;
-        public D3DDDI_GAMMARAMP_TYPE Type;
-        public IntPtr pGammaRamp;
-        public uint Size;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RECT { public int Left, Top, Right, Bottom; }
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    private struct MONITORINFOEX
-    {
-        public int cbSize;
-        public RECT rcMonitor;
-        public RECT rcWork;
-        public uint dwFlags;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string szDevice;
-    }
-
-    private delegate bool MonitorEnumProc(IntPtr hMonitor, IntPtr hdcMonitor, ref RECT lprcMonitor, IntPtr dwData);
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetDC(IntPtr hWnd);
 
     [DllImport("user32.dll")]
-    private static extern bool EnumDisplayMonitors(IntPtr hdc, IntPtr lprcClip, MonitorEnumProc proc, IntPtr data);
+    private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
 
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MONITORINFOEX info);
+    [DllImport("gdi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetDeviceGammaRamp(IntPtr hDC, IntPtr lpRamp);
 
-    [DllImport("gdi32.dll", CharSet = CharSet.Auto, EntryPoint = "CreateDCW", SetLastError = true)]
-    private static extern IntPtr CreateDC(string lpszDriver, string lpszDevice, string? lpszOutput, IntPtr lpInitData);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteDC(IntPtr hdc);
-
-    [DllImport("gdi32.dll", ExactSpelling = true)]
-    private static extern int D3DKMTOpenAdapterFromHdc(ref D3DKMT_OPENADAPTERFROMHDC data);
-
-    [DllImport("gdi32.dll", ExactSpelling = true)]
-    private static extern int D3DKMTSetGammaRamp(ref D3DKMT_SETGAMMARAMP data);
-
-    [DllImport("gdi32.dll", ExactSpelling = true)]
-    private static extern int D3DKMTCloseAdapter(ref D3DKMT_CLOSEADAPTER data);
+    [DllImport("gdi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetDeviceGammaRamp(IntPtr hDC, IntPtr lpRamp);
 }

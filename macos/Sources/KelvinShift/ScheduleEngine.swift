@@ -294,9 +294,19 @@ final class ScheduleEngine {
         }
         // Past nightMin, before dayTransStart.
         if useBedtime {
-            if inRange(nowMin, from: nightMin, to: bedMin) {
-                let rampLen = wrap(bedMin - nightMin)
-                let p = progress(nowMin, from: nightMin, length: rampLen)
+            // Explicit bedtime ramp duration. Held night until rampStart,
+            // then linearly (Hermite) ramp to bedtime values across
+            // `bedtimeRampMinutes`. Clamped to the night→bedtime interval
+            // so an over-long ramp just starts at night-start.
+            let nightToBed = wrap(bedMin - nightMin)
+            let rampLen = min(settings.bedtimeRampMinutes, nightToBed)
+            let rampStart = wrap(bedMin - rampLen)
+
+            if inRange(nowMin, from: nightMin, to: rampStart) {
+                return (settings.nightKelvin, settings.nightBrightness, .night, rampStart)
+            }
+            if inRange(nowMin, from: rampStart, to: bedMin) {
+                let p = progress(nowMin, from: rampStart, length: rampLen)
                 return (lerp(settings.nightKelvin, settings.bedtimeKelvin, p),
                         lerpD(settings.nightBrightness, settings.bedtimeBrightness, p),
                         .rampToBedtime, bedMin)

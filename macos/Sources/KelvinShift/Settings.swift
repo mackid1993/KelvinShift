@@ -66,10 +66,11 @@ final class Settings: ObservableObject {
 
     // ── Bedtime (optional third anchor after night) ────────
     //
-    // When enabled, the schedule gains a slow ramp from night → bedtime
-    // settings. The ramp duration is implicit: it fills the entire window
-    // from night-start to bedtime. After bedtime, values hold until the
-    // morning day-transition begins, which interpolates from bedtime → day.
+    // When enabled, the schedule gains a separate slow ramp from night →
+    // bedtime settings. The ramp duration is configurable via
+    // bedtimeRampMinutes — distinct from the day↔night transition. If the
+    // ramp is longer than the time between night-start and bedtime, it's
+    // clamped to that interval (i.e., starts ramping at night-start).
 
     @Published var bedtimeEnabled: Bool {
         didSet { save("ks_bedEnabled", bedtimeEnabled) }
@@ -85,6 +86,9 @@ final class Settings: ObservableObject {
     }
     @Published var bedtimeMinute: Int {
         didSet { save("ks_bedM", bedtimeMinute) }
+    }
+    @Published var bedtimeRampMinutes: Int {
+        didSet { let v = max(bedtimeRampMinutes, 1); if bedtimeRampMinutes != v { bedtimeRampMinutes = v; return }; save("ks_bedRamp", v) }
     }
 
     // ── Master toggle ──────────────────────────────────────
@@ -128,11 +132,12 @@ final class Settings: ObservableObject {
         longitude         = d.object(forKey: "ks_lon")        as? Double ?? 0.0
         locationName      = d.string(forKey: "ks_locName")               ?? ""
         transitionMinutes = d.object(forKey: "ks_transMins")  as? Int    ?? 20
-        bedtimeEnabled    = d.object(forKey: "ks_bedEnabled") as? Bool   ?? false
-        bedtimeKelvin     = d.object(forKey: "ks_bedK")       as? Int    ?? 1900
-        bedtimeBrightness = d.object(forKey: "ks_bedBrt")     as? Double ?? 0.4
-        bedtimeHour       = d.object(forKey: "ks_bedH")       as? Int    ?? 23
-        bedtimeMinute     = d.object(forKey: "ks_bedM")       as? Int    ?? 0
+        bedtimeEnabled     = d.object(forKey: "ks_bedEnabled") as? Bool  ?? false
+        bedtimeKelvin      = d.object(forKey: "ks_bedK")       as? Int   ?? 1900
+        bedtimeBrightness  = d.object(forKey: "ks_bedBrt")     as? Double ?? 0.4
+        bedtimeHour        = d.object(forKey: "ks_bedH")       as? Int   ?? 23
+        bedtimeMinute      = d.object(forKey: "ks_bedM")       as? Int   ?? 0
+        bedtimeRampMinutes = d.object(forKey: "ks_bedRamp")    as? Int   ?? 60
         enabled           = d.object(forKey: "ks_enabled")    as? Bool   ?? true
 
         // Sync launchAtLogin: prefer user's saved preference, re-register if needed

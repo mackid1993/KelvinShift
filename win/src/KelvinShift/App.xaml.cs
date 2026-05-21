@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
 using KelvinShift.Services;
@@ -19,6 +21,13 @@ public partial class App : Application
     private static PreferencesWindow? _prefs;
     private bool _startMinimized;
 
+    // Single-instance enforcement. Second launch signals the existing
+    // instance to surface its Preferences window, then exits.
+    private const string MutexName     = "KelvinShift-SingleInstance-v1";
+    private const string ActivateEvent = "KelvinShift-Activate-v1";
+    private Mutex? _mutex;
+    private EventWaitHandle? _activateHandle;
+
     private static readonly string LogDir = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "KelvinShift");
@@ -26,6 +35,48 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
+        // Elevated registry helper: if launched with the CLI flag (via
+        // GammaRangeService.RequestChange's UAC re-launch), perform the
+        // HKLM write and exit immediately. Never reaches the UI path.
+        if (e.Args.Length > 0 && Array.Exists(e.Args, a =>
+                a.Equals(GammaRangeService.CliFlag, StringComparison.OrdinalIgnoreCase)))
+        {
+            Environment.Exit(GammaRangeService.ApplyFromCli(e.Args));
+            return;
+        }
+
+        // Uninstall hook: Inno Setup calls us with this flag BEFORE removing
+        // files. Reset the gamma ramp to identity so the system reverts to
+        // its prior calibration. No UI; exits immediately.
+        if (e.Args.Length > 0 && Array.Exists(e.Args, a =>
+                a.Equals("--uninstall-cleanup", StringComparison.OrdinalIgnoreCase)))
+        {
+            try { var svc = new GammaService(); svc.Reset(); svc.Dispose(); } catch { }
+            Environment.Exit(0);
+            return;
+        }
+
+
+        // Single-instance gate: try to take the named mutex. If we can't, an
+        // existing instance is running — signal it to show prefs and exit.
+        _mutex = new Mutex(initiallyOwned: true, MutexName, out var createdNew);
+        if (!createdNew)
+        {
+            try
+            {
+                if (EventWaitHandle.TryOpenExisting(ActivateEvent, out var ev))
+                {
+                    ev.Set();
+                    ev.Dispose();
+                }
+            }
+            catch { }
+            Shutdown(0);
+            return;
+        }
+        _activateHandle = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEvent);
+        Task.Run(ListenForActivations);
+
         // Catch every unhandled exception path so a crash leaves a breadcrumb.
         AppDomain.CurrentDomain.UnhandledException += (_, args) =>
             LogCrash("AppDomain.UnhandledException", args.ExceptionObject as Exception);
@@ -41,8 +92,7 @@ public partial class App : Application
         };
 
         base.OnStartup(e);
-        _startMinimized = e.Args.Length > 0 &&
-            Array.Exists(e.Args, a => a.Equals("--tray", StringComparison.OrdinalIgnoreCase));
+        _startMinimized = true; // always tray-only on launch — click the tray icon to open Preferences
 
         try
         {
@@ -54,11 +104,17 @@ public partial class App : Application
             Watchdog = new GammaWatchdog(Gamma);
             Engine.Start();
 
+            // When the user toggles "Use system color pipeline" off, tear
+            // down any active MHC association immediately rather than waiting
+            // for the next scheduled gamma apply.
+            Settings.PropertyChanged += (_, e) =>
+            {
+                if (e.PropertyName == nameof(SettingsService.UseSystemColorPipeline))
+                    Gamma.OnSystemColorPipelineToggled();
+            };
+
             Tray = new TrayIconService(Engine, Settings, ShowPreferences, Quit);
             Tray.Show();
-
-            if (!_startMinimized)
-                ShowPreferences();
         }
         catch (Exception ex)
         {
@@ -67,6 +123,15 @@ public partial class App : Application
                 $"KelvinShift failed to start:\n\n{ex.Message}\n\nDetails written to:\n{LogPath}",
                 "KelvinShift", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
+        }
+    }
+
+    private void ListenForActivations()
+    {
+        while (true)
+        {
+            try { _activateHandle?.WaitOne(); } catch { return; }
+            Dispatcher.BeginInvoke(new Action(ShowPreferences));
         }
     }
 
@@ -99,10 +164,14 @@ public partial class App : Application
 
     private static void Quit()
     {
-        Engine?.Stop();
-        Watchdog?.Dispose();
-        Gamma?.Dispose();
-        Tray?.Dispose();
-        Current.Shutdown();
+        try { Engine?.Stop(); }    catch { }
+        try { Watchdog?.Dispose(); } catch { }
+        try { Gamma?.Dispose(); }   catch { }
+        try { Tray?.Dispose(); }    catch { }
+        Current?.Shutdown();
+        // Hard guarantee in case a background hook or wait handle is keeping
+        // the process alive past Shutdown(). Without this the user sees the
+        // tray icon disappear but KelvinShift.exe lingers in Task Manager.
+        Environment.Exit(0);
     }
 }

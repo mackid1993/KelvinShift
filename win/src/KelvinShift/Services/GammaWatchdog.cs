@@ -23,8 +23,9 @@ public sealed class GammaWatchdog : IDisposable
     private readonly HwndSource _src;
     private readonly IntPtr _hwnd;
     private readonly DispatcherTimer _heartbeat;
-    private readonly DispatcherTimer _burstTimer;
-    private DateTime _burstUntil = DateTime.MinValue;
+
+    private System.Threading.Thread? _hookThread;
+    private uint _hookThreadId;
 
     private IntPtr _hConsoleDisplay;
     private IntPtr _hMonitorPower;
@@ -32,6 +33,7 @@ public sealed class GammaWatchdog : IDisposable
 
     private WinEventDelegate? _foregroundDelegate;
     private IntPtr _foregroundHook;
+    private IntPtr _objectShowHook;
 
     public GammaWatchdog(GammaService gamma)
     {
@@ -53,36 +55,67 @@ public sealed class GammaWatchdog : IDisposable
         _hMonitorPower   = RegisterPowerSettingNotification(_hwnd, ref GUID_MONITOR_POWER_ON,    DEVICE_NOTIFY_WINDOW_HANDLE);
         _hSessionDisplay = RegisterPowerSettingNotification(_hwnd, ref GUID_SESSION_DISPLAY_STATUS, DEVICE_NOTIFY_WINDOW_HANDLE);
 
-        // Foreground-window hook — the critical anti-flash event
-        _foregroundDelegate = OnForegroundChanged;
-        _foregroundHook = SetWinEventHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND,
-            IntPtr.Zero, _foregroundDelegate, 0, 0, WINEVENT_OUTOFCONTEXT);
+        // The SetWinEventHook callback must fire with sub-frame latency or
+        // we miss the gamma reset window. Registering the hook from the WPF
+        // UI thread queues WINEVENT_OUTOFCONTEXT events behind every other
+        // dispatcher message — by the time our callback runs, the bright
+        // frame has already been displayed.
+        //
+        // Dedicated TIME_CRITICAL thread with a native GetMessage pump
+        // installs the hook from itself, so events deliver here directly.
+        // The callback runs inside the GetMessage dispatch (microseconds),
+        // and the gamma reapply lands before the next display refresh.
+        _hookThread = new System.Threading.Thread(HookThreadMain)
+        {
+            Name = "KelvinShift-Hook",
+            IsBackground = true,
+            Priority = System.Threading.ThreadPriority.Highest,
+        };
+        _hookThread.SetApartmentState(System.Threading.ApartmentState.STA);
+        _hookThread.Start();
 
-        // Defensive heartbeat: reapply every 15s no matter what
-        _heartbeat = new DispatcherTimer { Interval = TimeSpan.FromSeconds(15) };
+        // Defensive heartbeat — covers events the WinEvent hooks can miss
+        // (HDR toggle, sleep/wake without a window event).
+        _heartbeat = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _heartbeat.Tick += (_, _) => _gamma.Reapply();
         _heartbeat.Start();
-
-        // Burst timer: while in the 2s window after a foreground change,
-        // reapply every 50ms. Stops automatically when burst expires.
-        _burstTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
-        _burstTimer.Tick += (_, _) =>
-        {
-            if (DateTime.UtcNow >= _burstUntil) { _burstTimer.Stop(); return; }
-            _gamma.Reapply();
-        };
     }
 
-    private void StartBurst()
+    private void HookThreadMain()
     {
-        _burstUntil = DateTime.UtcNow.AddSeconds(2);
-        _gamma.Reapply();
-        if (!_burstTimer.IsEnabled) _burstTimer.Start();
+        // Install the WinEvent hooks from THIS thread so the callbacks
+        // deliver here (not to the WPF dispatcher). OBJECT_CREATE fires
+        // earlier in the window lifecycle than OBJECT_SHOW — before the
+        // slide-in animation that resets gamma. SYSTEM range catches
+        // foreground/menu/dialog activations.
+        _foregroundDelegate = OnForegroundChanged;
+        _foregroundHook = SetWinEventHook(
+            EVENT_SYSTEM_SOUND, EVENT_SYSTEM_MINIMIZEEND,
+            IntPtr.Zero, _foregroundDelegate, 0, 0, WINEVENT_OUTOFCONTEXT);
+        _objectShowHook = SetWinEventHook(
+            EVENT_OBJECT_CREATE, EVENT_OBJECT_SHOW,
+            IntPtr.Zero, _foregroundDelegate, 0, 0, WINEVENT_OUTOFCONTEXT);
+
+        _hookThreadId = GetCurrentThreadId();
+
+        // Native GetMessage pump. Events arrive via PostThreadMessage when
+        // the WinEvent hook fires; GetMessage drains them and invokes the
+        // callback inline with microsecond latency.
+        while (GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+        {
+            if (msg.message == WM_QUIT) break;
+            TranslateMessage(ref msg);
+            DispatchMessage(ref msg);
+        }
     }
 
     private void OnForegroundChanged(IntPtr hWinEventHook, uint eventType, IntPtr hwnd,
         int idObject, int idChild, uint thread, uint time)
-        => StartBurst();
+    {
+        if ((eventType == EVENT_OBJECT_CREATE || eventType == EVENT_OBJECT_SHOW)
+            && idObject != 0) return;
+        _gamma.Reapply();
+    }
 
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
@@ -91,19 +124,17 @@ public sealed class GammaWatchdog : IDisposable
             case WM_DISPLAYCHANGE:
             case WM_DEVICECHANGE:
                 _gamma.InvalidateAdapters();
-                StartBurst();
+                _gamma.Reapply();
                 break;
             case WM_WTSSESSION_CHANGE:
-                // 0x7 = WTS_SESSION_UNLOCK, 0x8 = WTS_CONSOLE_CONNECT
-                StartBurst();
+                _gamma.Reapply();
                 break;
             case WM_POWERBROADCAST:
-                // PBT_POWERSETTINGCHANGE = 0x8013
-                if ((int)wParam == 0x8013) StartBurst();
+                if ((int)wParam == 0x8013) _gamma.Reapply();  // PBT_POWERSETTINGCHANGE
                 break;
             case WM_THEMECHANGED:
             case WM_DWMCOMPOSITIONCHANGED:
-                StartBurst();
+                _gamma.Reapply();
                 break;
         }
         return IntPtr.Zero;
@@ -112,8 +143,11 @@ public sealed class GammaWatchdog : IDisposable
     public void Dispose()
     {
         _heartbeat.Stop();
-        _burstTimer.Stop();
+        if (_hookThreadId != 0)
+            PostThreadMessage(_hookThreadId, WM_QUIT, IntPtr.Zero, IntPtr.Zero);
+        _hookThread?.Join(200);
         if (_foregroundHook != IntPtr.Zero) UnhookWinEvent(_foregroundHook);
+        if (_objectShowHook != IntPtr.Zero) UnhookWinEvent(_objectShowHook);
         if (_hConsoleDisplay != IntPtr.Zero) UnregisterPowerSettingNotification(_hConsoleDisplay);
         if (_hMonitorPower   != IntPtr.Zero) UnregisterPowerSettingNotification(_hMonitorPower);
         if (_hSessionDisplay != IntPtr.Zero) UnregisterPowerSettingNotification(_hSessionDisplay);
@@ -135,8 +169,15 @@ public sealed class GammaWatchdog : IDisposable
 
     private const int NOTIFY_FOR_THIS_SESSION = 0;
     private const int DEVICE_NOTIFY_WINDOW_HANDLE = 0;
-    private const uint EVENT_SYSTEM_FOREGROUND = 0x0003;
-    private const uint WINEVENT_OUTOFCONTEXT = 0x0000;
+    private const uint EVENT_SYSTEM_SOUND       = 0x0001;
+    private const uint EVENT_SYSTEM_FOREGROUND  = 0x0003;
+    private const uint EVENT_SYSTEM_MENUSTART   = 0x0004;
+    private const uint EVENT_SYSTEM_MENUEND     = 0x0005;
+    private const uint EVENT_SYSTEM_DIALOGSTART = 0x0010;
+    private const uint EVENT_SYSTEM_MINIMIZEEND = 0x0017;
+    private const uint EVENT_OBJECT_CREATE      = 0x8001;
+    private const uint EVENT_OBJECT_SHOW        = 0x8002;
+    private const uint WINEVENT_OUTOFCONTEXT    = 0x0000;
 
     private static Guid GUID_CONSOLE_DISPLAY_STATE  = new("6fe69556-704a-47a0-8f24-c28d936fda47");
     private static Guid GUID_MONITOR_POWER_ON       = new("02731015-4510-4526-99e6-e5a17ebd1aea");
@@ -154,4 +195,25 @@ public sealed class GammaWatchdog : IDisposable
     [DllImport("user32.dll")] private static extern IntPtr SetWinEventHook(uint eventMin, uint eventMax, IntPtr hmodWinEventProc,
         WinEventDelegate lpfnWinEventProc, uint idProcess, uint idThread, uint dwFlags);
     [DllImport("user32.dll")] private static extern bool UnhookWinEvent(IntPtr hWinEventHook);
+
+    // ── Native message pump (dedicated hook thread) ───────────
+    private const uint WM_QUIT = 0x0012;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public int pt_x;
+        public int pt_y;
+    }
+
+    [DllImport("user32.dll")] private static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+    [DllImport("user32.dll")] private static extern bool TranslateMessage(ref MSG lpMsg);
+    [DllImport("user32.dll")] private static extern IntPtr DispatchMessage(ref MSG lpMsg);
+    [DllImport("user32.dll")] private static extern bool PostThreadMessage(uint idThread, uint Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll")] private static extern uint GetCurrentThreadId();
 }

@@ -41,7 +41,7 @@ Requires .NET 8 SDK; Inno Setup 6 is needed only for the installer step.
 - **Live preview** while dragging any slider
 - **Demo cycle** — see a full day/night/(bedtime) loop in 10 seconds
 - **Multi-monitor** support
-- **No shell-UI flash** on Windows (the f.lux/CareUEyes approach — `D3DKMTSetGammaRamp` + foreground-event watchdog, not the GDI path that Light Bulb and Iris use)
+- **No shell-UI flash** on Windows — gamma watchdog with read-back checks reapplies only when Windows resets the LUT
 
 ## Defaults
 

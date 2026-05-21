@@ -4,35 +4,50 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
     xmlns:sys="clr-namespace:System;assembly=mscorlib"
+    xmlns:vm="clr-namespace:KelvinShift.ViewModels"
     Title="KelvinShift"
-    Width="500" Height="980"
-    MinWidth="500" MinHeight="700"
+    Width="620" Height="980"
+    MinWidth="560" MinHeight="700"
+    WindowStyle="None"
+    ResizeMode="CanResize"
     WindowBackdropType="Mica"
     ExtendsContentIntoTitleBar="True"
     WindowCornerPreference="Round"
-    WindowStartupLocation="CenterScreen">
+    WindowStartupLocation="CenterScreen"
+    Icon="pack://application:,,,/AppIcon.ico"
+    Background="Transparent">
 
+    <!-- WPF-UI's Mica backdrop requires ExtendsContentIntoTitleBar=True,
+         which in turn requires a ui:TitleBar to provide the visible chrome. -->
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="KelvinShift" Icon="pack://application:,,,/AppIcon.ico"/>
+        <ui:TitleBar Grid.Row="0" Title="KelvinShift">
+            <ui:TitleBar.Icon>
+                <ui:ImageIcon Source="pack://application:,,,/AppIcon.ico" Width="16" Height="16">
+                    <ui:ImageIcon.Clip>
+                        <RectangleGeometry Rect="0,0,16,16" RadiusX="3.5" RadiusY="3.5"/>
+                    </ui:ImageIcon.Clip>
+                </ui:ImageIcon>
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,8,20,20">
-            <StackPanel>
+            <StackPanel Grid.IsSharedSizeScope="True">
 
                 <!-- Color Temperature -->
                 <ui:Card Margin="0,0,0,12" Padding="16">
                     <StackPanel>
                         <TextBlock Text="🌡  Color Temperature" FontWeight="SemiBold" Margin="0,0,0,10"/>
 
-                        <Grid Margin="0,0,0,4">
+                        <Grid Height="32" Margin="0,0,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="80"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Day" VerticalAlignment="Center"/>
                             <Slider x:Name="DayKSlider" Grid.Column="1"
@@ -44,14 +59,12 @@
                             <TextBlock Grid.Column="2" Text="{Binding Settings.DayKelvin, StringFormat={}{0} K}"
                                        VerticalAlignment="Center" HorizontalAlignment="Right"/>
                         </Grid>
-                        <TextBlock Text="Recommended 5000–6500 K for daytime use"
-                                   FontSize="11" Opacity="0.7" Margin="0,0,0,12"/>
 
-                        <Grid Margin="0,0,0,4">
+                        <Grid Height="32" Margin="0,8,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="80"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Night" VerticalAlignment="Center"/>
                             <Slider x:Name="NightKSlider" Grid.Column="1"
@@ -63,8 +76,26 @@
                             <TextBlock Grid.Column="2" Text="{Binding Settings.NightKelvin, StringFormat={}{0} K}"
                                        VerticalAlignment="Center" HorizontalAlignment="Right"/>
                         </Grid>
-                        <TextBlock Text="Recommended 2200–3000 K for nighttime use"
-                                   FontSize="11" Opacity="0.7"/>
+
+                        <Grid Height="32" Margin="0,8,0,4" Visibility="{Binding Settings.BedtimeEnabled, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Bed" VerticalAlignment="Center"/>
+                            <Slider x:Name="BedKSlider" Grid.Column="1"
+                                    Minimum="1000" Maximum="4000" TickFrequency="100" IsSnapToTickEnabled="True"
+                                    Value="{Binding Settings.BedtimeKelvin, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    PreviewMouseLeftButtonDown="BedK_Down"
+                                    PreviewMouseLeftButtonUp="BedK_Up"
+                                    Margin="8,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding Settings.BedtimeKelvin, StringFormat={}{0} K}"
+                                       VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                        </Grid>
+
+                        <TextBlock Text="Day 5000–6500 K  ·  Night 2200–3000 K"
+                                   FontSize="11" Opacity="0.7" Margin="0,4,0,0"/>
                     </StackPanel>
                 </ui:Card>
 
@@ -73,11 +104,11 @@
                     <StackPanel>
                         <TextBlock Text="☀  Brightness" FontWeight="SemiBold" Margin="0,0,0,10"/>
 
-                        <Grid Margin="0,0,0,4">
+                        <Grid Height="32" Margin="0,0,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="80"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Day" VerticalAlignment="Center"/>
                             <Slider x:Name="DayBSlider" Grid.Column="1"
@@ -91,11 +122,11 @@
                                        VerticalAlignment="Center" HorizontalAlignment="Right"/>
                         </Grid>
 
-                        <Grid Margin="0,8,0,4">
+                        <Grid Height="32" Margin="0,8,0,4">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="60"/>
                                 <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="80"/>
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Night" VerticalAlignment="Center"/>
                             <Slider x:Name="NightBSlider" Grid.Column="1"
@@ -109,67 +140,26 @@
                                        VerticalAlignment="Center" HorizontalAlignment="Right"/>
                         </Grid>
 
+                        <Grid Height="32" Margin="0,8,0,4" Visibility="{Binding Settings.BedtimeEnabled, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Bed" VerticalAlignment="Center"/>
+                            <Slider x:Name="BedBSlider" Grid.Column="1"
+                                    Minimum="0.1" Maximum="1.0" TickFrequency="0.05" IsSnapToTickEnabled="True"
+                                    Value="{Binding Settings.BedtimeBrightness, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    PreviewMouseLeftButtonDown="BedB_Down"
+                                    PreviewMouseLeftButtonUp="BedB_Up"
+                                    Margin="8,0"/>
+                            <TextBlock Grid.Column="2"
+                                       Text="{Binding Settings.BedtimeBrightness, StringFormat={}{0:P0}}"
+                                       VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                        </Grid>
+
                         <TextBlock Text="Dims the screen via gamma — does not affect backlight"
                                    FontSize="11" Opacity="0.7" Margin="0,8,0,0"/>
-                    </StackPanel>
-                </ui:Card>
-
-                <!-- Bedtime -->
-                <ui:Card Margin="0,0,0,12" Padding="16">
-                    <StackPanel>
-                        <TextBlock Text="🛏  Bedtime" FontWeight="SemiBold" Margin="0,0,0,10"/>
-
-                        <ui:ToggleSwitch IsChecked="{Binding Settings.BedtimeEnabled, Mode=TwoWay}"
-                                         Content="Enable bedtime ramp" Margin="0,0,0,12"/>
-
-                        <StackPanel IsEnabled="{Binding Settings.BedtimeEnabled}">
-                            <Grid Margin="0,0,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="60"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="70"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Bed K" VerticalAlignment="Center"/>
-                                <Slider x:Name="BedKSlider" Grid.Column="1"
-                                        Minimum="1000" Maximum="4000" TickFrequency="100" IsSnapToTickEnabled="True"
-                                        Value="{Binding Settings.BedtimeKelvin, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        PreviewMouseLeftButtonDown="BedK_Down"
-                                        PreviewMouseLeftButtonUp="BedK_Up"
-                                        Margin="8,0"/>
-                                <TextBlock Grid.Column="2" Text="{Binding Settings.BedtimeKelvin, StringFormat={}{0} K}"
-                                           VerticalAlignment="Center" HorizontalAlignment="Right"/>
-                            </Grid>
-
-                            <Grid Margin="0,8,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="60"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="70"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Bed %" VerticalAlignment="Center"/>
-                                <Slider x:Name="BedBSlider" Grid.Column="1"
-                                        Minimum="0.1" Maximum="1.0" TickFrequency="0.05" IsSnapToTickEnabled="True"
-                                        Value="{Binding Settings.BedtimeBrightness, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                        PreviewMouseLeftButtonDown="BedB_Down"
-                                        PreviewMouseLeftButtonUp="BedB_Up"
-                                        Margin="8,0"/>
-                                <TextBlock Grid.Column="2"
-                                           Text="{Binding Settings.BedtimeBrightness, StringFormat={}{0:P0}}"
-                                           VerticalAlignment="Center" HorizontalAlignment="Right"/>
-                            </Grid>
-
-                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                <TextBlock Text="Bedtime:" VerticalAlignment="Center" Width="60"/>
-                                <ui:NumberBox Value="{Binding Settings.BedtimeHour, Mode=TwoWay}" Minimum="0" Maximum="23"
-                                              SpinButtonPlacementMode="Inline" Width="90"/>
-                                <TextBlock Text=":" VerticalAlignment="Center" Margin="6,0"/>
-                                <ui:NumberBox Value="{Binding Settings.BedtimeMinute, Mode=TwoWay}" Minimum="0" Maximum="59"
-                                              SpinButtonPlacementMode="Inline" Width="90"/>
-                            </StackPanel>
-
-                            <TextBlock TextWrapping="Wrap" FontSize="11" Opacity="0.7" Margin="0,10,0,0"
-                                       Text="After night settings are reached, the display slowly ramps to these warmer/dimmer bedtime values across the entire interval from night-start to your bedtime."/>
-                        </StackPanel>
                     </StackPanel>
                 </ui:Card>
 
@@ -186,26 +176,27 @@
                                          IsChecked="{Binding Settings.ScheduleMode, Converter={StaticResource StringEqualsConverter}, ConverterParameter=custom, Mode=TwoWay}"/>
                         </StackPanel>
 
-                        <Grid Visibility="{Binding Settings.ScheduleMode, Converter={StaticResource StringEqualsToVisibility}, ConverterParameter=solar}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Margin="0,0,8,0">
-                                <TextBlock Text="Latitude" FontSize="11" Opacity="0.7"/>
-                                <ui:NumberBox Value="{Binding Settings.Latitude, Mode=TwoWay}"/>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Margin="0,0,8,0">
-                                <TextBlock Text="Longitude" FontSize="11" Opacity="0.7"/>
-                                <ui:NumberBox Value="{Binding Settings.Longitude, Mode=TwoWay}"/>
-                            </StackPanel>
-                            <ui:Button Grid.Column="2" Content="Use Current"
+                        <StackPanel Visibility="{Binding Settings.ScheduleMode, Converter={StaticResource StringEqualsToVisibility}, ConverterParameter=solar}">
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,8,0">
+                                    <TextBlock Text="Latitude" FontSize="11" Opacity="0.7" Margin="0,0,0,4"/>
+                                    <ui:NumberBox Value="{Binding Settings.Latitude, Mode=TwoWay}" HorizontalAlignment="Stretch"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="Longitude" FontSize="11" Opacity="0.7" Margin="0,0,0,4"/>
+                                    <ui:NumberBox Value="{Binding Settings.Longitude, Mode=TwoWay}" HorizontalAlignment="Stretch"/>
+                                </StackPanel>
+                            </Grid>
+                            <ui:Button Content="Use Current Location"
                                        Icon="{ui:SymbolIcon Symbol=Location24}"
                                        Command="{Binding UseCurrentLocationCommand}"
                                        IsEnabled="{Binding IsLocating, Converter={StaticResource InvertBool}}"
-                                       VerticalAlignment="Bottom"/>
-                        </Grid>
+                                       HorizontalAlignment="Left"/>
+                        </StackPanel>
                         <TextBlock Text="{Binding LocationError}" Foreground="OrangeRed" FontSize="11"
                                    Margin="0,6,0,0"
                                    Visibility="{Binding LocationError, Converter={StaticResource NullToCollapsed}}"/>
@@ -213,41 +204,112 @@
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,0"
                                     Visibility="{Binding Settings.ScheduleMode, Converter={StaticResource StringEqualsToVisibility}, ConverterParameter=custom}">
                             <StackPanel Margin="0,0,16,0">
-                                <TextBlock Text="Day starts" FontSize="11" Opacity="0.7"/>
+                                <TextBlock Text="Day starts" FontSize="11" Opacity="0.7" Margin="0,0,0,4"/>
                                 <StackPanel Orientation="Horizontal">
-                                    <ui:NumberBox Value="{Binding Settings.CustomDayHour, Mode=TwoWay}" Minimum="0" Maximum="23" Width="80"/>
-                                    <TextBlock Text=":" VerticalAlignment="Center" Margin="6,0"/>
-                                    <ui:NumberBox Value="{Binding Settings.CustomDayMinute, Mode=TwoWay}" Minimum="0" Maximum="59" Width="80"/>
+                                    <ComboBox ItemsSource="{x:Static vm:PreferencesViewModel.Hours12}"
+                                              SelectedItem="{Binding DayHour12, Mode=TwoWay}" Width="90" MinWidth="90"/>
+                                    <TextBlock Text=":" VerticalAlignment="Center" Margin="4,0"/>
+                                    <ComboBox ItemsSource="{x:Static vm:PreferencesViewModel.Minutes}"
+                                              SelectedItem="{Binding DayMinute, Mode=TwoWay}" Width="70">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding StringFormat={}{0:D2}}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <ComboBox ItemsSource="{x:Static vm:PreferencesViewModel.AmPmOptions}"
+                                              SelectedItem="{Binding DayAmPm, Mode=TwoWay}" Width="90" MinWidth="90" Margin="6,0,0,0"/>
                                 </StackPanel>
                             </StackPanel>
                             <StackPanel>
-                                <TextBlock Text="Night starts" FontSize="11" Opacity="0.7"/>
+                                <TextBlock Text="Night starts" FontSize="11" Opacity="0.7" Margin="0,0,0,4"/>
                                 <StackPanel Orientation="Horizontal">
-                                    <ui:NumberBox Value="{Binding Settings.CustomNightHour, Mode=TwoWay}" Minimum="0" Maximum="23" Width="80"/>
-                                    <TextBlock Text=":" VerticalAlignment="Center" Margin="6,0"/>
-                                    <ui:NumberBox Value="{Binding Settings.CustomNightMinute, Mode=TwoWay}" Minimum="0" Maximum="59" Width="80"/>
+                                    <ComboBox ItemsSource="{x:Static vm:PreferencesViewModel.Hours12}"
+                                              SelectedItem="{Binding NightHour12, Mode=TwoWay}" Width="90" MinWidth="90"/>
+                                    <TextBlock Text=":" VerticalAlignment="Center" Margin="4,0"/>
+                                    <ComboBox ItemsSource="{x:Static vm:PreferencesViewModel.Minutes}"
+                                              SelectedItem="{Binding NightMinute, Mode=TwoWay}" Width="70">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding StringFormat={}{0:D2}}"/>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                    <ComboBox ItemsSource="{x:Static vm:PreferencesViewModel.AmPmOptions}"
+                                              SelectedItem="{Binding NightAmPm, Mode=TwoWay}" Width="90" MinWidth="90" Margin="6,0,0,0"/>
                                 </StackPanel>
                             </StackPanel>
                         </StackPanel>
+
+                        <Separator Margin="0,16,0,12"/>
+
+                        <ui:ToggleSwitch IsChecked="{Binding Settings.BedtimeEnabled, Mode=TwoWay}"
+                                         Content="🛏  Enable bedtime ramp" Margin="0,0,0,8"/>
+                        <StackPanel Orientation="Horizontal" Visibility="{Binding Settings.BedtimeEnabled, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="Bedtime:" VerticalAlignment="Center" Width="70"/>
+                            <ComboBox ItemsSource="{x:Static vm:PreferencesViewModel.Hours12}"
+                                      SelectedItem="{Binding BedtimeHour12, Mode=TwoWay}" Width="90" MinWidth="90"/>
+                            <TextBlock Text=":" VerticalAlignment="Center" Margin="4,0"/>
+                            <ComboBox ItemsSource="{x:Static vm:PreferencesViewModel.Minutes}"
+                                      SelectedItem="{Binding BedtimeMinute, Mode=TwoWay}" Width="70">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StringFormat={}{0:D2}}"/>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <ComboBox ItemsSource="{x:Static vm:PreferencesViewModel.AmPmOptions}"
+                                      SelectedItem="{Binding BedtimeAmPm, Mode=TwoWay}" Width="90" MinWidth="90" Margin="6,0,0,0"/>
+                        </StackPanel>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Opacity="0.7" Margin="0,8,0,0"
+                                   Visibility="{Binding Settings.BedtimeEnabled, Converter={StaticResource BoolToVisibility}}"
+                                   Text="After the night setting is reached, the display ramps to the Bed temperature/brightness above. Ramp duration is under Transitions."/>
                     </StackPanel>
                 </ui:Card>
 
-                <!-- Transition -->
+                <!-- Transitions -->
                 <ui:Card Margin="0,0,0,12" Padding="16">
                     <StackPanel>
-                        <TextBlock Text="↔  Transition" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <TextBlock Text="↔  Transitions" FontWeight="SemiBold" Margin="0,0,0,10"/>
 
-                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                            <ui:NumberBox Value="{Binding Settings.TransitionMinutes, Mode=TwoWay}" Minimum="1" Maximum="600" Width="100"/>
-                            <TextBlock Text="minutes" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                        </StackPanel>
-                        <TextBlock Text="Duration of the smooth ramp between day and night temperatures"
-                                   FontSize="11" Opacity="0.7" Margin="0,0,0,12"/>
+                        <Grid Height="32" Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Day↔Night" VerticalAlignment="Center" FontSize="11" Opacity="0.85"/>
+                            <Slider Grid.Column="1"
+                                    Minimum="1" Maximum="120" TickFrequency="5" IsSnapToTickEnabled="True"
+                                    Value="{Binding Settings.TransitionMinutes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    VerticalAlignment="Center" Margin="8,0"/>
+                            <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right"
+                                       Text="{Binding Settings.TransitionMinutes, StringFormat={}{0} min}"/>
+                        </Grid>
+
+                        <Grid Height="32" Margin="0,8,0,8"
+                              Visibility="{Binding Settings.BedtimeEnabled, Converter={StaticResource BoolToVisibility}}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="60"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Night→Bed" VerticalAlignment="Center" FontSize="11" Opacity="0.85"/>
+                            <Slider Grid.Column="1"
+                                    Minimum="1" Maximum="180" TickFrequency="10" IsSnapToTickEnabled="True"
+                                    Value="{Binding Settings.BedtimeRampMinutes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                    VerticalAlignment="Center" Margin="8,0"/>
+                            <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right"
+                                       Text="{Binding Settings.BedtimeRampMinutes, StringFormat={}{0} min}"/>
+                        </Grid>
+                        <TextBlock Text="Smooth Hermite ramp between phases. Bedtime ramp is clamped to the night→bedtime window if too long."
+                                   FontSize="11" Opacity="0.7" Margin="0,4,0,12" TextWrapping="Wrap"/>
 
                         <StackPanel Orientation="Horizontal">
                             <ui:Button Content="{Binding DemoButtonText}"
                                        Command="{Binding ToggleDemoCommand}" Width="140"/>
-                            <ProgressBar Width="180" Margin="12,0" Value="{Binding DemoProgress}" Maximum="1"
+                            <ProgressBar Width="180" Margin="12,0"
+                                         Value="{Binding DemoProgress, Mode=OneWay}" Maximum="1"
                                          Visibility="{Binding IsDemoRunning, Converter={StaticResource BoolToVisibility}}"/>
                             <TextBlock Text="{Binding DemoProgressPercent, StringFormat={}{0}%}"
                                        VerticalAlignment="Center"
@@ -263,7 +325,18 @@
                     <StackPanel>
                         <TextBlock Text="⚙  General" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         <ui:ToggleSwitch IsChecked="{Binding Settings.Enabled, Mode=TwoWay}" Content="Enabled" Margin="0,0,0,8"/>
-                        <ui:ToggleSwitch IsChecked="{Binding Settings.LaunchAtLogin, Mode=TwoWay}" Content="Start with Windows"/>
+                        <ui:ToggleSwitch IsChecked="{Binding Settings.LaunchAtLogin, Mode=TwoWay}" Content="Start with Windows" Margin="0,0,0,12"/>
+
+                        <Separator Margin="0,4,0,12"/>
+
+                        <ui:ToggleSwitch IsChecked="{Binding ExtendedRangeEnabled, Mode=TwoWay}"
+                                         Content="Allow warm temperatures below 3500K"/>
+                        <TextBlock TextWrapping="Wrap" FontSize="11" Opacity="0.7" Margin="0,4,0,0"
+                                   Text="Optional. Writes a system registry value (UAC prompt) that lifts Windows' default gamma-range cap. Only matters for the gamma-ramp fallback path. Requires sign-out / reboot."/>
+                        <TextBlock Text="{Binding ExtendedRangeStatus}" FontSize="11" Opacity="0.85"
+                                   Foreground="{DynamicResource SystemAccentColorBrush}"
+                                   Margin="0,4,0,0" TextWrapping="Wrap"
+                                   Visibility="{Binding ExtendedRangeStatus, Converter={StaticResource NullToCollapsed}}"/>
                     </StackPanel>
                 </ui:Card>
 

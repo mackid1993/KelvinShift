@@ -35,11 +35,11 @@ To bump the version: edit `src\KelvinShift\KelvinShift.csproj` (`<Version>`) and
 
 ## How it works
 
-KelvinShift adjusts color temperature by writing per-channel gamma ramps to each monitor. Two reasons this version doesn't flash on shell UI (unlike Light Bulb, Iris, and most blue-light filters):
+KelvinShift adjusts color temperature by writing per-channel gamma ramps to each monitor. Two design choices keep shell UI flash-free:
 
-1. **`D3DKMTSetGammaRamp`, not `SetDeviceGammaRamp`.** The kernel-mode WDDM API bypasses the GDI gamma-reset paths that cause flashes when Action Center / Settings / UAC composes. This is the same path f.lux and CareUEyes use.
+1. **`InternalSetDeviceGammaRamp` from `mscms.dll`.** This undocumented export — NOT in `gdi32.dll` (where most third-party tools look for it and fail to resolve), but in `mscms.dll` (Microsoft Color Management) — writes the gamma at a layer Windows' calibration tracking doesn't touch on shell-flyout open, and bypasses the `GdiIcmGammaRange` registry cap. Resolved dynamically via `GetProcAddress("mscms.dll", "InternalSetDeviceGammaRamp")` at startup; falls back to public `SetDeviceGammaRamp` on systems where the symbol isn't available.
 
-2. **Aggressive event watchdog.** A message-only window listens for `WM_DISPLAYCHANGE`, `WM_WTSSESSION_CHANGE`, `WM_DEVICECHANGE`, `WM_POWERBROADCAST` (display state changes), and — most importantly — `EVENT_SYSTEM_FOREGROUND` (via `SetWinEventHook`). Any of these triggers a 2-second burst that reapplies gamma every 50ms, beating Windows' transient resets.
+2. **Read-back-gated watchdog.** A message-only window listens for `WM_DISPLAYCHANGE`, `WM_WTSSESSION_CHANGE`, `WM_DEVICECHANGE`, `WM_POWERBROADCAST` plus `SetWinEventHook` events, registered from a dedicated `Highest`-priority thread with its own native `GetMessage` pump (sub-frame latency, no WPF dispatcher in the path). On each event the watchdog reads the current GPU LUT with `GetDeviceGammaRamp` and only re-writes if it has actually drifted — unnecessary writes are themselves visible as flicker, so suppressing them is what keeps the display quiet.
 
 Color temperatures use the 91-entry Redshift blackbody table (CIE color matching functions, Ingo Thies 2013). D65 white point at 6500K. Identical to the macOS build.
 

@@ -1,5 +1,26 @@
+# macOS build
 .build/
 *.app
 *.zip
 .DS_Store
 .swiftpm/
+
+# Windows build
+win/bin/
+win/obj/
+win/src/**/bin/
+win/src/**/obj/
+win/KelvinShift-*-Setup.exe
+win/installer/Setup.exe
+win/installer/*.iss.bak
+
+# Analysis scratch (not for repo)
+win/installer/flux.exe
+win/installer/reverse*.py
+win/installer/make_rounded_icon.py
+win/installer/icon_check_*.png
+
+# IDE / editor
+.vs/
+.vscode/
+*.user

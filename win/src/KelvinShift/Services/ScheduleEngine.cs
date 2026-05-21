@@ -123,7 +123,7 @@ public sealed class ScheduleEngine
 
     // ── Demo cycle ────────────────────────────────────────
 
-    public void StartDemo(double durationSeconds = 10.0)
+    public void StartDemo(double durationSeconds = 15.0)
     {
         if (_isDemoRunning) return;
         _isDemoRunning = true;
@@ -261,10 +261,21 @@ public sealed class ScheduleEngine
         // Past nightMin, before dayTransStart.
         if (useBedtime)
         {
-            if (InRange(nowMin, nightMin, bedMin))
+            // Explicit bedtime ramp duration. Hold night until rampStart,
+            // then linearly (Hermite) ramp to bedtime values. Clamped to
+            // the night→bedtime interval so an over-long ramp just starts
+            // at night-start.
+            var nightToBed = Wrap(bedMin - nightMin);
+            var rampLen = Math.Min(_settings.BedtimeRampMinutes, nightToBed);
+            var rampStart = Wrap(bedMin - rampLen);
+
+            if (InRange(nowMin, nightMin, rampStart))
             {
-                var rampLen = Wrap(bedMin - nightMin);
-                var p = Progress(nowMin, nightMin, rampLen);
+                return new ScheduleResult(_settings.NightKelvin, _settings.NightBrightness, SchedulePhase.Night, rampStart);
+            }
+            if (InRange(nowMin, rampStart, bedMin))
+            {
+                var p = Progress(nowMin, rampStart, rampLen);
                 return new ScheduleResult(
                     Lerp(_settings.NightKelvin, _settings.BedtimeKelvin, p),
                     LerpD(_settings.NightBrightness, _settings.BedtimeBrightness, p),
@@ -310,6 +321,8 @@ public sealed class ScheduleEngine
         return Math.Min(1, (double)elapsed / Math.Max(1, length));
     }
 
+    // Hermite smoothstep: matches macOS exactly. Same formula as
+    // macos/Sources/KelvinShift/ScheduleEngine.swift.
     private static int Lerp(int a, int b, double t)
     {
         var s = t * t * (3 - 2 * t);

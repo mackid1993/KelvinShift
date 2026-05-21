@@ -12,7 +12,7 @@ final class PreferencesWindowController: NSWindowController {
         let win = NSWindow(contentViewController: hc)
         win.title = "KelvinShift Preferences"
         win.styleMask = [.titled, .closable]
-        win.setContentSize(NSSize(width: 460, height: 1080))
+        win.setContentSize(NSSize(width: 460, height: 940))
         win.center()
         win.isReleasedWhenClosed = false
         self.init(window: win)
@@ -44,11 +44,10 @@ struct PreferencesView: View {
             GroupBox(label: Label("Color Temperature", systemImage: "thermometer")) {
                 VStack(alignment: .leading, spacing: 12) {
                     dayKelvinRow
-                    Text("Recommended 5000–6500 K for daytime use")
-                        .font(.caption).foregroundColor(.secondary)
-
                     nightKelvinRow
-                    Text("Recommended 2200–3000 K for nighttime use")
+                    if s.bedtimeEnabled { bedKelvinRow }
+
+                    Text("Day 5000–6500 K  ·  Night 2200–3000 K  ·  Bed enabled below")
                         .font(.caption).foregroundColor(.secondary)
 
                     previewingIndicator
@@ -62,34 +61,10 @@ struct PreferencesView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     dayBrightnessRow
                     nightBrightnessRow
+                    if s.bedtimeEnabled { bedBrightnessRow }
+
                     Text("Dims the screen via gamma — does not affect backlight")
                         .font(.caption).foregroundColor(.secondary)
-
-                    previewingIndicator
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // ── Bedtime ───────────────────────────────────
-            GroupBox(label: Label("Bedtime", systemImage: "bed.double")) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Toggle("Enable bedtime ramp", isOn: $s.bedtimeEnabled)
-
-                    Group {
-                        bedKelvinRow
-                        bedBrightnessRow
-                        HStack(spacing: 16) {
-                            labelled("Bedtime") {
-                                hourPicker($s.bedtimeHour, $s.bedtimeMinute)
-                            }
-                        }
-                        Text("After night settings are reached, the display slowly ramps to these warmer/dimmer bedtime values across the entire interval from night-start to your bedtime.")
-                            .font(.caption).foregroundColor(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .disabled(!s.bedtimeEnabled)
-                    .opacity(s.bedtimeEnabled ? 1 : 0.5)
 
                     previewingIndicator
                 }
@@ -150,22 +125,54 @@ struct PreferencesView: View {
                             }
                         }
                     }
+
+                    Divider().padding(.vertical, 4)
+
+                    Toggle(isOn: $s.bedtimeEnabled) {
+                        Label("Enable bedtime ramp", systemImage: "bed.double")
+                    }
+                    if s.bedtimeEnabled {
+                        HStack(spacing: 16) {
+                            labelled("Bedtime") {
+                                hourPicker($s.bedtimeHour, $s.bedtimeMinute)
+                            }
+                        }
+                        Text("After the night setting is reached, the display ramps to the Bed temperature/brightness above. Ramp duration is under Transitions.")
+                            .font(.caption).foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // ── Transition ─────────────────────────────
-            GroupBox(label: Label("Transition", systemImage: "arrow.left.arrow.right")) {
+            // ── Transitions ────────────────────────────
+            GroupBox(label: Label("Transitions", systemImage: "arrow.left.arrow.right")) {
                 VStack(alignment: .leading, spacing: 8) {
+                    Text("Day ↔ Night")
+                        .font(.caption).foregroundColor(.secondary)
                     HStack {
                         TextField("", value: $s.transitionMinutes, format: .number)
                             .frame(width: 60)
-                        Text("minutes")
+                        Text("min")
                         Stepper("", value: $s.transitionMinutes, in: 1...600, step: 5).labelsHidden()
                     }
-                    Text("Duration of the smooth ramp between day and night temperatures")
+
+                    if s.bedtimeEnabled {
+                        Text("Night → Bedtime")
+                            .font(.caption).foregroundColor(.secondary)
+                            .padding(.top, 4)
+                        HStack {
+                            TextField("", value: $s.bedtimeRampMinutes, format: .number)
+                                .frame(width: 60)
+                            Text("min")
+                            Stepper("", value: $s.bedtimeRampMinutes, in: 1...600, step: 5).labelsHidden()
+                        }
+                    }
+
+                    Text("Smooth Hermite ramp between phases. The bedtime ramp is clamped to the night-start → bedtime window if too long.")
                         .font(.caption).foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Divider()
 
@@ -210,7 +217,7 @@ struct PreferencesView: View {
             Spacer()
         }
         .padding()
-        .frame(width: 460, height: 1080)
+        .frame(width: 460, height: 940)
         // Observe Kelvin changes to drive preview while slider is held
         .onChange(of: s.dayKelvin) { newVal in
             if previewingSlider == "day" {
@@ -354,7 +361,7 @@ struct PreferencesView: View {
 
     private var bedKelvinRow: some View {
         HStack {
-            Text("Bed K:").frame(width: 46, alignment: .trailing)
+            Text("Bed:").frame(width: 46, alignment: .trailing)
             TextField("", value: $s.bedtimeKelvin, format: .number)
                 .frame(width: 60)
             Text("K")
@@ -380,7 +387,7 @@ struct PreferencesView: View {
 
     private var bedBrightnessRow: some View {
         HStack {
-            Text("Bed %:").frame(width: 46, alignment: .trailing)
+            Text("Bed:").frame(width: 46, alignment: .trailing)
             TextField("", value: bedBrightnessPercent, format: .number)
                 .frame(width: 60)
             Text("%")

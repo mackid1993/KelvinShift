@@ -76,7 +76,43 @@ public sealed class TrayIconService : IDisposable
 
     private ContextMenu BuildMenu()
     {
-        var m = new ContextMenu();
+        var m = new ContextMenu
+        {
+            // Transparent menu background so the Mica backdrop on the popup
+            // HWND below shows through. The MenuItems still render their
+            // own opaque hover/text — only the menu fill itself is gone.
+            Background = System.Windows.Media.Brushes.Transparent,
+        };
+
+        // Enlarge every menu item AND make each one click the full width of
+        // the popup. Without HorizontalContentAlignment=Stretch, the
+        // clickable area is only the text glyph — clicks on the padding
+        // are eaten. With Stretch, the whole row is the hit target.
+        var bigItemStyle = new System.Windows.Style(typeof(MenuItem));
+        bigItemStyle.Setters.Add(new System.Windows.Setter(
+            MenuItem.FontSizeProperty, 14.0));
+        bigItemStyle.Setters.Add(new System.Windows.Setter(
+            MenuItem.PaddingProperty, new System.Windows.Thickness(16, 10, 16, 10)));
+        bigItemStyle.Setters.Add(new System.Windows.Setter(
+            MenuItem.HorizontalContentAlignmentProperty,
+            System.Windows.HorizontalAlignment.Stretch));
+        bigItemStyle.Setters.Add(new System.Windows.Setter(
+            MenuItem.VerticalContentAlignmentProperty,
+            System.Windows.VerticalAlignment.Stretch));
+        m.Resources.Add(typeof(MenuItem), bigItemStyle);
+        // Mica backdrop on the popup HWND once it's realized. The Opened
+        // event fires after the popup window is created and visible, when
+        // PresentationSource.FromVisual can return the actual Win32 hwnd.
+        m.Opened += (sender, _) =>
+        {
+            if (sender is not ContextMenu cm) return;
+            var source = System.Windows.PresentationSource.FromVisual(cm) as System.Windows.Interop.HwndSource;
+            if (source?.Handle is { } hwnd && hwnd != IntPtr.Zero)
+            {
+                ApplyDarkMode(hwnd);
+                ApplyMicaBackdrop(hwnd);
+            }
+        };
         _miCurrent  = DisabledItem(); m.Items.Add(_miCurrent);
         _miPhase    = DisabledItem(); m.Items.Add(_miPhase);
         m.Items.Add(new Separator());
@@ -175,11 +211,11 @@ public sealed class TrayIconService : IDisposable
     {
         try
         {
-            // 32x32 is the standard tray icon size on modern Windows; the OS
-            // scales for higher-DPI variants. Hand-drawn vector shapes via GDI+
-            // (filled paths, no font glyphs) for a clean modern look that
-            // stays crisp at any size — not Wingdings/Symbol-font glyphs.
-            const int size = 32;
+            // Render at 64x64 (not 32) so Windows downscales with proper
+            // anti-aliasing for any DPI. At 32 our composite transition
+            // glyphs become illegible when the taskbar downscales to 16-20px;
+            // 64x64 source preserves enough detail to stay readable.
+            const int size = 64;
             using var bmp = new Bitmap(size, size, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(bmp))
             {
@@ -187,32 +223,57 @@ public sealed class TrayIconService : IDisposable
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 g.CompositingQuality = CompositingQuality.HighQuality;
+                // All DrawX helpers were tuned for a virtual 32px canvas;
+                // scale the graphics context so they still work at any size.
+                g.ScaleTransform(size / 32f, size / 32f);
+                const int vsize = 32;
 
                 if (!s.Enabled)
                 {
-                    DrawOff(g, size);
+                    DrawOff(g, vsize);
                 }
                 else
                 {
+                    // Palette tuned for warm-gamma stability. Warm gamma kills
+                    // blue and reduces green, so any color with high B (blue,
+                    // purple, cyan) hue-shifts to reddish/orange — looks
+                    // "funky", not intentional. We use colors that are
+                    // already in the R/G plane: they look the same under warm
+                    // gamma as under neutral, just slightly more saturated.
+                    //
+                    //   sun   — warm gold (unchanged, already R/G)
+                    //   moon  — warm cream / moonlight, NOT cool blue
+                    //   bed   — warm amber, NOT purple
+                    //   trans — warm orange / soft yellow (unchanged)
+                    //
+                    // Shape carries the day/night/bedtime meaning; color just
+                    // adds glanceability. With this palette nothing hue-shifts
+                    // when MHC/gamma pushes the display warm.
+                    var sun  = Color.FromArgb(0xFF, 0xC8, 0x4A); // warm gold
+                    var moon = Color.FromArgb(0xF0, 0xE0, 0xC0); // warm cream
+                    var bed  = Color.FromArgb(0xE8, 0x90, 0x58); // warm amber
+                    var transToNight = Color.FromArgb(0xFF, 0xA8, 0x60); // warm orange
+                    var transToDay   = Color.FromArgb(0xFF, 0xD8, 0x80); // soft yellow
+
                     switch (s.Phase)
                     {
                         case SchedulePhase.Day:
-                            DrawSun(g, size, Color.FromArgb(0xFF, 0xC8, 0x4A));
-                            break;
-                        case SchedulePhase.TransitionToNight:
-                            DrawSun(g, size, Color.FromArgb(0xFF, 0x9A, 0x4A));
+                            DrawSun(g, vsize, sun);
                             break;
                         case SchedulePhase.Night:
-                            DrawMoon(g, size, Color.FromArgb(0xA8, 0xC8, 0xFF));
-                            break;
-                        case SchedulePhase.TransitionToDay:
-                            DrawMoon(g, size, Color.FromArgb(0xFF, 0xC0, 0x80));
-                            break;
-                        case SchedulePhase.RampToBedtime:
-                            DrawBed(g, size, Color.FromArgb(0xC8, 0x80, 0xFF));
+                            DrawMoon(g, vsize, moon);
                             break;
                         case SchedulePhase.Bedtime:
-                            DrawBed(g, size, Color.FromArgb(0xA0, 0x60, 0xE0));
+                            DrawBed(g, vsize, bed);
+                            break;
+                        case SchedulePhase.TransitionToNight:
+                            DrawSunMoon(g, vsize, transToNight);
+                            break;
+                        case SchedulePhase.TransitionToDay:
+                            DrawSunMoon(g, vsize, transToDay);
+                            break;
+                        case SchedulePhase.RampToBedtime:
+                            DrawSleepingMoon(g, vsize, moon, bed);
                             break;
                     }
                 }
@@ -234,6 +295,121 @@ public sealed class TrayIconService : IDisposable
     // All glyphs target a 32×32 canvas with the visual centered on (16,16).
     // Stroke widths and proportions chosen to remain readable when Windows
     // scales the icon down to 16px on low-DPI taskbars.
+
+    private enum Glyph { Sun, Moon, Bed, SunMoon }
+
+    // Composite sun+moon for day↔night transitions: sun lower-left, crescent
+    // moon upper-right. Bumped to 0.75/0.65 scale so it stays clearly visible
+    // at 16-20px tray downscale. Color tint = direction (warm orange to night,
+    // soft yellow to day).
+    private static void DrawSunMoon(Graphics g, int size, Color color)
+    {
+        var st = g.Save();
+        g.TranslateTransform(-size * 0.20f, size * 0.20f);
+        g.ScaleTransform(0.75f, 0.75f);
+        DrawSun(g, size, color);
+        g.Restore(st);
+
+        st = g.Save();
+        g.TranslateTransform(size * 0.25f, -size * 0.25f);
+        g.ScaleTransform(0.65f, 0.65f);
+        DrawMoon(g, size, color);
+        g.Restore(st);
+    }
+
+    // 4-digit Kelvin value fills the whole canvas. The "K" suffix that mac
+    // shows is sacrificed for tray readability — at 16-20px the extra char
+    // would cap font size at ~14px (illegible). Without K, the digits
+    // render at ~22px in the 32px virtual canvas (~11px after downscale to
+    // 16px tray). The K is implicit; full tooltip shows "5000K · 100%".
+    private static void DrawGlyphAndKelvin(Graphics g, int vsize, Glyph glyph, Color color, int kelvin)
+    {
+        var text = kelvin.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var familyName =
+            IsFontInstalled("Bahnschrift Condensed") ? "Bahnschrift Condensed" :
+            IsFontInstalled("Bahnschrift")           ? "Bahnschrift"           :
+            "Segoe UI";
+
+        using var brush = new SolidBrush(color);
+        g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+
+        // Auto-size to fill ~95% of canvas
+        var size = vsize * 1.05f;
+        Font? font = null;
+        SizeF measured = default;
+        for (var i = 0; i < 12; i++)
+        {
+            font?.Dispose();
+            font = new Font(familyName, size, System.Drawing.FontStyle.Bold, GraphicsUnit.Pixel);
+            measured = g.MeasureString(text, font, int.MaxValue, StringFormat.GenericTypographic);
+            if (measured.Width <= vsize * 0.96f && measured.Height <= vsize * 0.92f) break;
+            size *= 0.9f;
+        }
+        if (font is null) return;
+        try
+        {
+            var x = (vsize - measured.Width) / 2f;
+            var y = (vsize - measured.Height) / 2f;
+            g.DrawString(text, font, brush, x, y, StringFormat.GenericTypographic);
+        }
+        finally { font.Dispose(); }
+
+        // Small phase indicator dot in top-left — gives the glance-only
+        // signal "day/night/bed" without competing with the text.
+        var dotColor = glyph switch
+        {
+            Glyph.Sun     => Color.FromArgb(0xFF, 0xC8, 0x4A),  // warm gold
+            Glyph.Moon    => Color.FromArgb(0xF0, 0xE0, 0xC0),  // warm cream
+            Glyph.Bed     => Color.FromArgb(0xE8, 0x90, 0x58),  // warm amber
+            Glyph.SunMoon => Color.FromArgb(0xFF, 0xA8, 0x60),  // warm orange
+            _ => color,
+        };
+        using var dotBrush = new SolidBrush(dotColor);
+        var dotR = vsize * 0.11f;
+        g.FillEllipse(dotBrush, vsize * 0.03f, vsize * 0.03f, dotR * 2, dotR * 2);
+    }
+
+    private static bool IsFontInstalled(string name)
+    {
+        using var col = new System.Drawing.Text.InstalledFontCollection();
+        foreach (var f in col.Families)
+            if (string.Equals(f.Name, name, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
+    // Transition icon: main (source) glyph at near-full size dominates so
+    // it's readable at any tray size, plus a small destination badge in
+    // the bottom-right corner showing what we're transitioning TO. Far
+    // more legible than two equally-sized half-glyphs at small sizes.
+    // (arrowColor param kept for ABI compatibility; unused in this design.)
+    private static void DrawTransition(Graphics g, int size, Color srcColor, Color dstColor,
+        Color arrowColor, Glyph src, Glyph dst)
+    {
+        // Main glyph at 0.85 scale, top-left so the badge has room
+        var state = g.Save();
+        g.TranslateTransform(-size * 0.07f, -size * 0.07f);
+        g.ScaleTransform(0.85f, 0.85f);
+        DrawGlyph(g, size, srcColor, src);
+        g.Restore(state);
+
+        // Destination badge in bottom-right corner at ~0.50 scale
+        state = g.Save();
+        g.TranslateTransform(size * 0.50f, size * 0.50f);
+        g.ScaleTransform(0.50f, 0.50f);
+        DrawGlyph(g, size, dstColor, dst);
+        g.Restore(state);
+    }
+
+    private static void DrawGlyph(Graphics g, int size, Color color, Glyph glyph)
+    {
+        switch (glyph)
+        {
+            case Glyph.Sun:     DrawSun(g, size, color); break;
+            case Glyph.Moon:    DrawMoon(g, size, color); break;
+            case Glyph.Bed:     DrawBed(g, size, color); break;
+            case Glyph.SunMoon: DrawSunMoon(g, size, color); break;
+        }
+    }
 
     private static void DrawSun(Graphics g, int size, Color color)
     {
@@ -259,6 +435,28 @@ public sealed class TrayIconService : IDisposable
             var y2 = cy + (float)Math.Sin(a) * outer;
             g.DrawLine(pen, x1, y1, x2, y2);
         }
+    }
+
+    // Night → bedtime ramp: moon at near-full size with a single bold Z
+    // floating above. The Z is universally recognized as "sleep / going to
+    // bed" and reads at any tray size.
+    private static void DrawSleepingMoon(Graphics g, int size, Color moonColor, Color zColor)
+    {
+        // Moon shifted slightly down-left so the Z has room
+        var state = g.Save();
+        g.TranslateTransform(-2f, 2f);
+        g.ScaleTransform(0.85f, 0.85f);
+        DrawMoon(g, size, moonColor);
+        g.Restore(state);
+
+        // Big bold Z in upper-right corner
+        using var pen = new Pen(zColor, 2.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        var x = size * 0.55f;
+        var y = size * 0.10f;
+        var s = size * 0.30f;
+        g.DrawLine(pen, x,     y,     x + s, y);     // top
+        g.DrawLine(pen, x + s, y,     x,     y + s); // diagonal
+        g.DrawLine(pen, x,     y + s, x + s, y + s); // bottom
     }
 
     private static void DrawMoon(Graphics g, int size, Color color)
@@ -291,14 +489,6 @@ public sealed class TrayIconService : IDisposable
         using var fill = new SolidBrush(color);
         using var pen = new Pen(color, 2.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
 
-        // Headboard-and-mattress silhouette: a tall left post, a low mattress,
-        // and a small pillow on top.
-        //
-        //   ┃▔▔▔▔▔▔▔▔▔▔▔▔
-        //   ┃ ▁▁▁▁▁▁▁▁▁▁▁▁▁
-        //   ┃▕░░░░░░░░░░░░░▏
-        //   ┗━━━━━━━━━━━━━━
-
         // Mattress base (rounded rect)
         var mattressLeft   = 5f;
         var mattressRight  = size - 3f;
@@ -325,17 +515,20 @@ public sealed class TrayIconService : IDisposable
 
     private static void DrawOff(Graphics g, int size)
     {
+        // Universal power-button glyph — the shape carries "off" regardless
+        // of taskbar color, no theme detection needed. A muted desaturated
+        // orange reads cleanly on both dark and light Win11 taskbars (high
+        // luminance contrast on dark, sufficient saturation on light).
         var cx = size / 2f;
-        var cy = size / 2f;
-        var color = Color.FromArgb(0x88, 0xAA, 0xAA, 0xAA);
-        using var pen = new Pen(color, 2.4f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        var cy = size / 2f + 1f; // nudged down to balance the upstroke
+        var color = Color.FromArgb(0xFF, 0xE0, 0x90, 0x60);
+        using var pen = new Pen(color, 2.6f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
 
-        // Circle with diagonal slash
-        var r = 11f;
-        g.DrawEllipse(pen, cx - r, cy - r, r * 2, r * 2);
-        // Slash at 45°
-        var d = r / (float)Math.Sqrt(2);
-        g.DrawLine(pen, cx - d, cy + d, cx + d, cy - d);
+        // Ring with a ~60° gap at the top
+        var r = 9f;
+        g.DrawArc(pen, cx - r, cy - r, r * 2, r * 2, 300f, 300f);
+        // Vertical bar through the gap, from above the ring down to center
+        g.DrawLine(pen, cx, cy - r - 2f, cx, cy);
     }
 
     private static GraphicsPath RoundedRect(float x, float y, float w, float h, float r)
@@ -375,6 +568,38 @@ public sealed class TrayIconService : IDisposable
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr handle);
+
+    // ── Win11 Mica backdrop on the tray context-menu popup ──────
+    // DWMWA_SYSTEMBACKDROP_TYPE = 38 (Win11 22H2+); value 3 = Mica Alt.
+    // DWMWA_USE_IMMERSIVE_DARK_MODE = 20 ensures the popup uses dark-mode
+    // borders to match the Mica tint.
+    private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+    private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    private const int DWMSBT_MAINWINDOW = 2;   // Mica
+    private const int DWMSBT_TABBEDWINDOW = 4; // Mica Alt
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
+
+    private static void ApplyMicaBackdrop(IntPtr hwnd)
+    {
+        try
+        {
+            var value = DWMSBT_TABBEDWINDOW;
+            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref value, sizeof(int));
+        }
+        catch { }
+    }
+
+    private static void ApplyDarkMode(IntPtr hwnd)
+    {
+        try
+        {
+            var dark = 1;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref dark, sizeof(int));
+        }
+        catch { }
+    }
 
     private sealed class RelayCommand : ICommand
     {

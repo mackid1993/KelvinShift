@@ -90,9 +90,20 @@ public sealed class SettingsService : INotifyPropertyChanged
     private int _bedtimeMinute;
     public int BedtimeMinute { get => _bedtimeMinute; set => Set(ref _bedtimeMinute, Math.Clamp(value, 0, 59)); }
 
+    private int _bedtimeRampMinutes = 60;
+    public int BedtimeRampMinutes { get => _bedtimeRampMinutes; set => Set(ref _bedtimeRampMinutes, Math.Max(1, value)); }
+
     // ── Master toggle ─────────────────────────────────────
     private bool _enabled = true;
     public bool Enabled { get => _enabled; set => Set(ref _enabled, value); }
+
+    // ── System color pipeline (MHC) ───────────────────────
+    // Opt-out toggle for the GPU hardware color transform path. When on
+    // (default) and the GPU supports it, color goes through Windows' MHC
+    // pipeline — no Action Center flash, no screenshot tint. Off falls
+    // back to the gamma ramp path (some flash on shell flyouts possible).
+    private bool _useSystemColorPipeline = true;
+    public bool UseSystemColorPipeline { get => _useSystemColorPipeline; set => Set(ref _useSystemColorPipeline, value); }
 
     // ── Launch at Login ───────────────────────────────────
     private bool _launchAtLogin;
@@ -134,6 +145,8 @@ public sealed class SettingsService : INotifyPropertyChanged
             BedtimeBrightness = dto.BedtimeBrightness == 0 ? 0.4 : dto.BedtimeBrightness;
             BedtimeHour       = dto.BedtimeHour;
             BedtimeMinute     = dto.BedtimeMinute;
+            BedtimeRampMinutes = dto.BedtimeRampMinutes == 0 ? 60 : dto.BedtimeRampMinutes;
+            UseSystemColorPipeline = dto.UseSystemColorPipeline;
             Enabled           = dto.Enabled;
             LaunchAtLogin     = LaunchAtLoginService.IsEnabled();
         }
@@ -155,6 +168,8 @@ public sealed class SettingsService : INotifyPropertyChanged
             BedtimeEnabled = BedtimeEnabled,
             BedtimeKelvin = BedtimeKelvin, BedtimeBrightness = BedtimeBrightness,
             BedtimeHour = BedtimeHour, BedtimeMinute = BedtimeMinute,
+            BedtimeRampMinutes = BedtimeRampMinutes,
+            UseSystemColorPipeline = UseSystemColorPipeline,
             Enabled = Enabled,
         };
         File.WriteAllText(_path, JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true }));
@@ -214,6 +229,8 @@ public sealed class SettingsService : INotifyPropertyChanged
         public double BedtimeBrightness { get; set; }
         public int BedtimeHour { get; set; }
         public int BedtimeMinute { get; set; }
+        public int BedtimeRampMinutes { get; set; }
+        public bool UseSystemColorPipeline { get; set; } = true;
         public bool Enabled { get; set; }
     }
 }
