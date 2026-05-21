@@ -84,21 +84,24 @@ public sealed class TrayIconService : IDisposable
             Background = System.Windows.Media.Brushes.Transparent,
         };
 
-        // Enlarge every menu item AND make each one click the full width of
-        // the popup. Without HorizontalContentAlignment=Stretch, the
-        // clickable area is only the text glyph — clicks on the padding
-        // are eaten. With Stretch, the whole row is the hit target.
+        // Enlarge every menu item AND make the entire padded row hit-test
+        // properly. WPF hit-testing skips any pixel with a null Background
+        // brush — that's what was making the padding area feel "dead"
+        // (visually it's the row, but clicks there fell through). Setting
+        // Transparent (zero-alpha but non-null) makes the whole 36px tall
+        // row a click target while still letting the Mica backdrop show
+        // through. Header alignment Stretch makes the highlighted hover
+        // bar span the full popup width.
         var bigItemStyle = new System.Windows.Style(typeof(MenuItem));
         bigItemStyle.Setters.Add(new System.Windows.Setter(
             MenuItem.FontSizeProperty, 14.0));
         bigItemStyle.Setters.Add(new System.Windows.Setter(
             MenuItem.PaddingProperty, new System.Windows.Thickness(16, 10, 16, 10)));
         bigItemStyle.Setters.Add(new System.Windows.Setter(
+            MenuItem.BackgroundProperty, System.Windows.Media.Brushes.Transparent));
+        bigItemStyle.Setters.Add(new System.Windows.Setter(
             MenuItem.HorizontalContentAlignmentProperty,
             System.Windows.HorizontalAlignment.Stretch));
-        bigItemStyle.Setters.Add(new System.Windows.Setter(
-            MenuItem.VerticalContentAlignmentProperty,
-            System.Windows.VerticalAlignment.Stretch));
         m.Resources.Add(typeof(MenuItem), bigItemStyle);
         // Mica backdrop on the popup HWND once it's realized. The Opened
         // event fires after the popup window is created and visible, when
