@@ -69,18 +69,34 @@ public partial class PreferencesWindow : FluentWindow
     }
 
     /// <summary>Commit a TextBox's binding when the user hits Enter so they
-    /// don't have to click out to apply the value. Bound to KeyDown on the
-    /// K-value TextBoxes via the XAML.</summary>
+    /// don't have to click out to apply the value.</summary>
     private void NumericTextBox_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Enter) return;
         if (sender is not System.Windows.Controls.TextBox tb) return;
         var be = tb.GetBindingExpression(System.Windows.Controls.TextBox.TextProperty);
         be?.UpdateSource();
-        // Move focus off the textbox to give visual feedback that the value
-        // landed (slider thumb snaps, etc.). Returning focus to the parent
-        // keeps keyboard nav predictable.
         Keyboard.ClearFocus();
+        e.Handled = true;
+    }
+
+    /// <summary>Select-all on focus so a click on the TextBox highlights the
+    /// existing value — user can just type the new number over it.</summary>
+    private void NumericTextBox_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.TextBox tb) tb.SelectAll();
+    }
+
+    /// <summary>WPF's normal click handling fires GotFocus → SelectAll → then
+    /// the mouse click deselects the highlight and places the caret. This
+    /// preview hook intercepts the click when the textbox doesn't yet have
+    /// keyboard focus, forces focus (triggering SelectAll), and swallows the
+    /// click — so the highlight survives.</summary>
+    private void NumericTextBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.TextBox tb) return;
+        if (tb.IsKeyboardFocusWithin) return;
+        tb.Focus();
         e.Handled = true;
     }
 }
