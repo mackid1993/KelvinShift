@@ -51,13 +51,15 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Day" VerticalAlignment="Center"/>
                             <Slider x:Name="DayKSlider" Grid.Column="1"
-                                    Minimum="2000" Maximum="6500" TickFrequency="100" IsSnapToTickEnabled="True"
+                                    Minimum="1000" Maximum="6500" TickFrequency="50" IsSnapToTickEnabled="True"
                                     Value="{Binding Settings.DayKelvin, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     PreviewMouseLeftButtonDown="DayK_Down"
                                     PreviewMouseLeftButtonUp="DayK_Up"
-                                    Margin="8,0"/>
-                            <TextBlock Grid.Column="2" Text="{Binding Settings.DayKelvin, StringFormat={}{0} K}"
-                                       VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                                    Margin="8,0" FocusVisualStyle="{x:Null}"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBox Text="{Binding Settings.DayKelvin, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="50" TextAlignment="Right"/>
+                                <TextBlock Text=" K" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                            </StackPanel>
                         </Grid>
 
                         <Grid Height="32" Margin="0,8,0,4">
@@ -68,13 +70,15 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Night" VerticalAlignment="Center"/>
                             <Slider x:Name="NightKSlider" Grid.Column="1"
-                                    Minimum="1800" Maximum="5500" TickFrequency="100" IsSnapToTickEnabled="True"
+                                    Minimum="1000" Maximum="6500" TickFrequency="50" IsSnapToTickEnabled="True"
                                     Value="{Binding Settings.NightKelvin, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     PreviewMouseLeftButtonDown="NightK_Down"
                                     PreviewMouseLeftButtonUp="NightK_Up"
-                                    Margin="8,0"/>
-                            <TextBlock Grid.Column="2" Text="{Binding Settings.NightKelvin, StringFormat={}{0} K}"
-                                       VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                                    Margin="8,0" FocusVisualStyle="{x:Null}"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBox Text="{Binding Settings.NightKelvin, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="50" TextAlignment="Right"/>
+                                <TextBlock Text=" K" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                            </StackPanel>
                         </Grid>
 
                         <Grid Height="32" Margin="0,8,0,4" Visibility="{Binding Settings.BedtimeEnabled, Converter={StaticResource BoolToVisibility}}">
@@ -85,13 +89,15 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="Bed" VerticalAlignment="Center"/>
                             <Slider x:Name="BedKSlider" Grid.Column="1"
-                                    Minimum="1000" Maximum="4000" TickFrequency="100" IsSnapToTickEnabled="True"
+                                    Minimum="1000" Maximum="6500" TickFrequency="50" IsSnapToTickEnabled="True"
                                     Value="{Binding Settings.BedtimeKelvin, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     PreviewMouseLeftButtonDown="BedK_Down"
                                     PreviewMouseLeftButtonUp="BedK_Up"
-                                    Margin="8,0"/>
-                            <TextBlock Grid.Column="2" Text="{Binding Settings.BedtimeKelvin, StringFormat={}{0} K}"
-                                       VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                                    Margin="8,0" FocusVisualStyle="{x:Null}"/>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBox Text="{Binding Settings.BedtimeKelvin, Mode=TwoWay, UpdateSourceTrigger=LostFocus}" Width="50" TextAlignment="Right"/>
+                                <TextBlock Text=" K" VerticalAlignment="Center" Margin="2,0,0,0"/>
+                            </StackPanel>
                         </Grid>
 
                     </StackPanel>
@@ -114,7 +120,7 @@
                                     Value="{Binding Settings.DayBrightness, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     PreviewMouseLeftButtonDown="DayB_Down"
                                     PreviewMouseLeftButtonUp="DayB_Up"
-                                    Margin="8,0"/>
+                                    Margin="8,0" FocusVisualStyle="{x:Null}"/>
                             <TextBlock Grid.Column="2"
                                        Text="{Binding Settings.DayBrightness, StringFormat={}{0:P0}}"
                                        VerticalAlignment="Center" HorizontalAlignment="Right"/>
@@ -132,7 +138,7 @@
                                     Value="{Binding Settings.NightBrightness, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     PreviewMouseLeftButtonDown="NightB_Down"
                                     PreviewMouseLeftButtonUp="NightB_Up"
-                                    Margin="8,0"/>
+                                    Margin="8,0" FocusVisualStyle="{x:Null}"/>
                             <TextBlock Grid.Column="2"
                                        Text="{Binding Settings.NightBrightness, StringFormat={}{0:P0}}"
                                        VerticalAlignment="Center" HorizontalAlignment="Right"/>
@@ -150,7 +156,7 @@
                                     Value="{Binding Settings.BedtimeBrightness, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                     PreviewMouseLeftButtonDown="BedB_Down"
                                     PreviewMouseLeftButtonUp="BedB_Up"
-                                    Margin="8,0"/>
+                                    Margin="8,0" FocusVisualStyle="{x:Null}"/>
                             <TextBlock Grid.Column="2"
                                        Text="{Binding Settings.BedtimeBrightness, StringFormat={}{0:P0}}"
                                        VerticalAlignment="Center" HorizontalAlignment="Right"/>
