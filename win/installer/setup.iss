@@ -33,6 +33,9 @@ ShowLanguageDialog=no
 DisableWelcomePage=no
 DisableDirPage=auto
 DisableReadyPage=no
+; The running instance is closed by PrepareToInstall (see [Code]) before any
+; file copy, so the Restart Manager page is neither needed nor wanted.
+CloseApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -79,3 +82,22 @@ Filename: "taskkill.exe"; Parameters: "/F /IM {#MyAppExeName}"; Flags: runhidden
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{userappdata}\KelvinShift"
+
+[Code]
+{ Reinstalling over a running copy used to fail: the tray app holds        }
+{ KelvinShift.exe open, so Setup could not replace it. PrepareToInstall    }
+{ runs just before the file copy — ask the running instance to close (a    }
+{ clean exit restores the gamma ramp), give it a moment, then force any    }
+{ straggler so the exe is unlocked. Harmless on a first install (taskkill  }
+{ simply finds nothing to close).                                         }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM KelvinShift.exe', '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Sleep(800);
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM KelvinShift.exe', '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;

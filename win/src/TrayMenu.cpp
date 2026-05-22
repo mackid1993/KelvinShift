@@ -152,8 +152,10 @@ void TrayMenu::DrawItem(const DRAWITEMSTRUCT* d)
     int i = (int)d->itemData;
     if (i < 0 || i >= (int)items_.size()) return;
     const MenuItem& it = items_[i];
-    HDC dc = d->hDC;
     RECT rc = d->rcItem;
+    int w = rc.right - rc.left;
+    int h = rc.bottom - rc.top;
+    if (w <= 0 || h <= 0) return;
 
     bool selected = (d->itemState & ODS_SELECTED) != 0;
     bool grayed = (d->itemState & ODS_GRAYED) != 0;
@@ -162,69 +164,85 @@ void TrayMenu::DrawItem(const DRAWITEMSTRUCT* d)
     // items ODS_SELECTED on hover, which looked like phantom buttons.)
     bool highlight = selected && !grayed && !it.separator;
 
-    // Row background.
+    // Render the whole row into an off-screen bitmap, then blit it in one
+    // pass. Painting straight to the live menu DC flashed the background
+    // fill before the text/glyph landed on top of it — visible as flicker
+    // as the selection moved between the Day / Night / Bedtime rows.
+    HDC dc = d->hDC;
+    HDC mem = CreateCompatibleDC(dc);
+    HBITMAP bmp = CreateCompatibleBitmap(dc, w, h);
+    HBITMAP oldBmp = (HBITMAP)SelectObject(mem, bmp);
+
+    // Everything below draws in row-local coordinates (origin at 0,0).
     HBRUSH fill = CreateSolidBrush(highlight ? Theme::Hover : Theme::Background);
-    FillRect(dc, &rc, fill);
+    RECT b{ 0, 0, w, h };
+    FillRect(mem, &b, fill);
     DeleteObject(fill);
 
     if (it.separator)
     {
         HPEN pen = CreatePen(PS_SOLID, 1, Theme::SeparatorLine);
-        HPEN old = (HPEN)SelectObject(dc, pen);
-        int cy = (rc.top + rc.bottom) / 2;
+        HPEN oldPen = (HPEN)SelectObject(mem, pen);
+        int cy = h / 2;
         int inset = Theme::Scale(10, dpi_);
-        MoveToEx(dc, rc.left + inset, cy, nullptr);
-        LineTo(dc, rc.right - inset, cy);
-        SelectObject(dc, old);
+        MoveToEx(mem, inset, cy, nullptr);
+        LineTo(mem, w - inset, cy);
+        SelectObject(mem, oldPen);
         DeleteObject(pen);
-        return;
     }
-
-    // Three fixed columns so every row lines up: a check column, a glyph
-    // column, then the label. Labels always start at labelX regardless of
-    // whether the row has a glyph (and which glyph), so Day / Night / Bedtime
-    // align as a block.
-    int glyphX = Theme::Scale(24, dpi_);
-    int labelX = Theme::Scale(54, dpi_);
-    HFONT old = (HFONT)SelectObject(dc, font_);
-    SetBkMode(dc, TRANSPARENT);
-
-    if (it.checkable && it.checked)
+    else
     {
-        SetTextColor(dc, Theme::Accent());
-        RECT g{ rc.left, rc.top, rc.left + glyphX, rc.bottom };
-        DrawTextW(dc, L"\x2713", -1, &g, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        // Three fixed columns so every row lines up: a check column, a glyph
+        // column, then the label. Labels always start at labelX regardless of
+        // whether the row has a glyph (and which glyph), so Day / Night /
+        // Bedtime align as a block.
+        int glyphX = Theme::Scale(24, dpi_);
+        int labelX = Theme::Scale(54, dpi_);
+        HFONT oldFont = (HFONT)SelectObject(mem, font_);
+        SetBkMode(mem, TRANSPARENT);
+
+        if (it.checkable && it.checked)
+        {
+            SetTextColor(mem, Theme::Accent());
+            RECT g{ 0, 0, glyphX, h };
+            DrawTextW(mem, L"\x2713", -1, &g, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        }
+
+        COLORREF textCol = grayed ? Theme::TextSecondary : Theme::TextPrimary;
+        if (it.iconId >= 0)
+        {
+            // Vector icon — uniform size and spacing, unlike the ragged Unicode
+            // symbols (the moon glyph rendered tiny, the bed didn't exist).
+            Gdiplus::Graphics gfx(mem);
+            gfx.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
+            int isz = Theme::Scale(17, dpi_);
+            int iy = (h - isz) / 2;
+            DrawIconGlyph(gfx, it.iconId, (float)glyphX, (float)iy, (float)isz,
+                          Gdiplus::Color(255, GetRValue(textCol), GetGValue(textCol),
+                                         GetBValue(textCol)));
+        }
+
+        SetTextColor(mem, textCol);
+        int textRight = it.value.empty() ? (w - Theme::Scale(12, dpi_))
+                                         : (valueColX_ - Theme::Scale(6, dpi_));
+        RECT tr{ labelX, 0, textRight, h };
+        DrawTextW(mem, it.text.c_str(), -1, &tr,
+                  DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
+        if (!it.value.empty())
+        {
+            RECT vr{ valueColX_, 0, w - Theme::Scale(12, dpi_), h };
+            DrawTextW(mem, it.value.c_str(), -1, &vr,
+                      DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        }
+
+        SelectObject(mem, oldFont);
     }
 
-    COLORREF textCol = grayed ? Theme::TextSecondary : Theme::TextPrimary;
-    if (it.iconId >= 0)
-    {
-        // Vector icon — uniform size and spacing, unlike the ragged Unicode
-        // symbols (the moon glyph rendered tiny, the bed didn't exist).
-        Gdiplus::Graphics gfx(dc);
-        gfx.SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
-        int isz = Theme::Scale(17, dpi_);
-        int iy = rc.top + ((rc.bottom - rc.top) - isz) / 2;
-        DrawIconGlyph(gfx, it.iconId, (float)(rc.left + glyphX), (float)iy, (float)isz,
-                      Gdiplus::Color(255, GetRValue(textCol), GetGValue(textCol),
-                                     GetBValue(textCol)));
-    }
+    BitBlt(dc, rc.left, rc.top, w, h, mem, 0, 0, SRCCOPY);
 
-    SetTextColor(dc, textCol);
-    int textRight = it.value.empty() ? (rc.right - Theme::Scale(12, dpi_))
-                                     : (rc.left + valueColX_ - Theme::Scale(6, dpi_));
-    RECT tr{ rc.left + labelX, rc.top, textRight, rc.bottom };
-    DrawTextW(dc, it.text.c_str(), -1, &tr,
-              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_END_ELLIPSIS);
-    if (!it.value.empty())
-    {
-        RECT vr{ rc.left + valueColX_, rc.top,
-                 rc.right - Theme::Scale(12, dpi_), rc.bottom };
-        DrawTextW(dc, it.value.c_str(), -1, &vr,
-                  DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-    }
-
-    SelectObject(dc, old);
+    SelectObject(mem, oldBmp);
+    DeleteObject(bmp);
+    DeleteDC(mem);
 }
 
 LRESULT CALLBACK TrayMenu::OwnerProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)

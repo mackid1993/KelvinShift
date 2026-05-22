@@ -82,6 +82,18 @@ LRESULT CALLBACK AppWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         case WM_KS_ACTIVATE:
             if (g_showPreferences) g_showPreferences();
             return 0;
+        // A reinstall over a running copy, the Restart Manager, and a Windows
+        // logoff/shutdown all close us through these messages. Routing them to
+        // a window-destroy runs the normal message-loop exit, so the gamma
+        // ramp is restored before the process goes away.
+        case WM_QUERYENDSESSION:
+            return TRUE;                       // yes, we can be closed
+        case WM_ENDSESSION:
+            if (wParam) DestroyWindow(hwnd);   // wParam == FALSE: session not ending
+            return 0;
+        case WM_CLOSE:
+            DestroyWindow(hwnd);
+            return 0;
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
@@ -164,14 +176,21 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int)
     Gdiplus::GdiplusStartupInput gdipInput;
     Gdiplus::GdiplusStartup(&gdipToken, &gdipInput, nullptr);
 
-    // ── App message window (receives the activate post) ───────────────────
+    // ── App control window ────────────────────────────────────────────────
+    // A real (never-shown) top-level window — deliberately NOT message-only,
+    // so a logoff/shutdown, the installer's Restart Manager, and `taskkill`
+    // can all reach it with WM_CLOSE / WM_QUERYENDSESSION. (A message-only
+    // window is invisible to all of those — that left a reinstall unable to
+    // close the running copy.) WS_EX_TOOLWINDOW keeps it off the taskbar and
+    // Alt-Tab; it is never shown anyway.
     WNDCLASSW wc{};
     wc.lpfnWndProc = &AppWndProc;
     wc.hInstance = hInst;
     wc.lpszClassName = kAppClassName;
     RegisterClassW(&wc);
-    g_appWindow = CreateWindowExW(0, kAppClassName, L"KelvinShift", 0,
-                                  0, 0, 0, 0, HWND_MESSAGE, nullptr, hInst, nullptr);
+    g_appWindow = CreateWindowExW(WS_EX_TOOLWINDOW, kAppClassName, L"KelvinShift",
+                                  WS_POPUP, 0, 0, 0, 0,
+                                  nullptr, nullptr, hInst, nullptr);
 
     int exitCode = 0;
     {
