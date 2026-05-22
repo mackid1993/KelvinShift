@@ -6,6 +6,7 @@
 .swiftpm/
 
 # Windows build
+win/build/
 win/bin/
 win/obj/
 win/src/**/bin/

@@ -8,7 +8,7 @@ Two platform-specific source trees, plus shared docs at the root:
 
 ```
 macos/          Swift / SwiftUI / AppKit — original menu-bar app
-win/            C# / WPF — Windows port with Inno Setup installer
+win/            C++ / Win32 — Windows port with Inno Setup installer
 README.md       User-facing docs covering both platforms
 CLAUDE.md       This file
 LICENSE
@@ -54,40 +54,51 @@ Settings.didChange → ScheduleEngine.tick() → GammaController.applyKelvinWith
 
 ## Windows
 
+Pure Win32 / C++20 — no framework. Originally a C# / WPF app; rewritten as a single statically-linked native exe (~0.5 MB, no .NET runtime) for instant startup and ~15 MB working set. The UI, behavior, and shared algorithm are unchanged from the WPF build.
+
 ### Build & Run
 
 ```powershell
 cd win
-.\build.ps1                  # publish self-contained exe + build Inno installer
-.\build.ps1 -SkipInstaller   # publish only
-.\build.ps1 -Clean           # clean bin/obj first
+.\build.ps1                  # compile native exe + build Inno installer
+.\build.ps1 -SkipInstaller   # compile only
+.\build.ps1 -Clean           # wipe the build dir first
+.\build.ps1 -Debug           # unoptimized build with symbols
 ```
 
-Output: `win\KelvinShift-1.0.0-Setup.exe` (~70 MB, includes the .NET 8 runtime).
+`build.ps1` finds the MSVC toolchain via `vswhere`, compiles `src\*.cpp` + `src\app.rc` with a direct `cl.exe` invocation (no `.vcxproj` / MSBuild), and links one exe. Output: `win\build\KelvinShift.exe` and `win\KelvinShift-<ver>-Setup.exe` (~2 MB).
 
-Requires: .NET 8 SDK, Inno Setup 6 (https://jrsoftware.org/isdl.php — installer-only step; publish works without it).
+Requires: Visual Studio 2022 Build Tools with the "Desktop development with C++" workload (MSVC + Windows SDK); Inno Setup 6 (https://jrsoftware.org/isdl.php — installer-only step; compiling works without it).
 
-Uninstall via Settings → Apps → KelvinShift. The uninstaller removes the gamma-range registry value and (optionally) `%APPDATA%\KelvinShift\settings.json`.
+Uninstall via Settings → Apps → KelvinShift. The uninstaller runs the exe with `--uninstall-cleanup` (resets the gamma ramp, clears the gamma-range registry value if set), then optionally removes `%APPDATA%\KelvinShift`.
 
 ### Windows Architecture
 
-WPF on .NET 8 (`net8.0-windows10.0.19041.0`), single project. Mica backdrop via WPF-UI, tray via H.NotifyIcon.Wpf, MVVM via CommunityToolkit.Mvvm.
+One flat source tree under `win/src/` (no `.vcxproj` — `build.ps1` drives `cl.exe` directly). C++20, `/MT` static CRT, per-monitor-DPI-v2 manifest. Mica/dark frame via DWM; tray via `Shell_NotifyIcon` v4; every control custom-drawn with the GDI+ flat C++ API. The service layer is a near-mechanical port of the macOS Swift classes — same enums, same math, same method names.
 
-- **GammaService** (`Services/GammaService.cs`) — applies via `InternalSetDeviceGammaRamp` (resolved from `mscms.dll` via `GetProcAddress`) with fallback to public `SetDeviceGammaRamp`. The internal variant writes the WDDM gamma at a layer not subject to the kernel's calibration-tracking reset, and bypasses the `GdiIcmGammaRange` registry cap. Same 91-entry Redshift table as macOS. Stable ramp (no perturbation) — the read-back gate in `Reapply` already prevents redundant writes.
-- **GammaWatchdog** (`Services/GammaWatchdog.cs`) — dedicated `Highest`-priority thread with a native `GetMessage` pump installs `SetWinEventHook(EVENT_OBJECT_CREATE..EVENT_OBJECT_SHOW)` + `SetWinEventHook(SYSTEM_SOUND..SYSTEM_MINIMIZEEND)` from itself, so callbacks deliver with sub-frame latency (no WPF dispatcher in the path). A message-only HWND additionally listens for `WM_DISPLAYCHANGE`, `WM_WTSSESSION_CHANGE`, `WM_DEVICECHANGE`, `WM_POWERBROADCAST` (with `RegisterPowerSettingNotification`), `WM_DWMCOMPOSITIONCHANGED`. Each event calls `GammaService.Reapply` which reads back the current GPU LUT via `GetDeviceGammaRamp` and only writes if it has actually deviated — suppressing unnecessary writes is what keeps the screen quiet (every write is itself a brief LUT update visible as flicker). Plus a 1s defensive heartbeat for events the hooks can miss.
-- **ScheduleEngine** (`Services/ScheduleEngine.cs`) — direct port of the Swift version. Same enums, same Hermite math, same `ComputeSchedule(at:)` helper. Uses `DispatcherTimer`.
-- **SolarCalculator** (`Services/SolarCalculator.cs`) — 1:1 port of `SolarCalculator.swift`.
-- **SettingsService** (`Services/SettingsService.cs`) — manual `INotifyPropertyChanged` properties, debounced 250ms write to `%APPDATA%\KelvinShift\settings.json`, raises `SettingsChanged` on every change.
-- **TrayIconService** (`Services/TrayIconService.cs`) — H.NotifyIcon. Dynamic 32×32 glyph (sun/transition/moon/bed/off, phase-colored) drawn at runtime via `DrawingVisual` → `RenderTargetBitmap`. Regenerated on every `StateChanged`.
-- **PreferencesWindow** (`Views/PreferencesWindow.xaml`) — Fluent (Mica) window with the same sections as macOS: Color Temperature, Brightness, Bedtime, Schedule, Transition, General. Slider preview gestures hooked from code-behind (`PreviewMouseLeftButtonDown` → `Engine.StartPreview`).
+- **GammaService** (`GammaService.cpp`) — applies via `InternalSetDeviceGammaRamp` (resolved from `mscms.dll` via `GetProcAddress`) with fallback to the public `SetDeviceGammaRamp`. The internal variant writes the gamma at a layer not subject to the kernel's calibration-tracking reset, and bypasses the `GdiIcmGammaRange` registry cap. Same 91-entry Redshift table as macOS. Stable ramp — the read-back gate in `Reapply` prevents redundant writes.
+- **GammaWatchdog** (`GammaWatchdog.cpp`) — a message-only HWND listens for `WM_DISPLAYCHANGE`, `WM_WTSSESSION_CHANGE`, `WM_DEVICECHANGE`, `WM_POWERBROADCAST` (with `RegisterPowerSettingNotification`), `WM_DWMCOMPOSITIONCHANGED`. A dedicated `Highest`-priority thread with its own native `GetMessage` pump adds `SetWinEventHook(SYSTEM_FOREGROUND..SYSTEM_MENUPOPUPEND)` for foreground / menu / dialog activations. Each event calls `GammaService::Reapply`, which reads back the GPU LUT via `GetDeviceGammaRamp` and only writes on real drift (every write is a brief LUT update visible as flicker). A 30s defensive heartbeat backstops the rest — deliberately slow so idle CPU is 0%. (The `EVENT_OBJECT_*` hook the WPF build used was dropped — it cost measurable idle CPU.)
+- **ScheduleEngine** (`ScheduleEngine.cpp`) — direct port of the Swift version. Same enums, same math, same `ComputeSchedule(at:)` helper. `SetTimer`-backed `Timer` helper.
+- **SolarCalculator** (`SolarCalculator.cpp`) — 1:1 port of `SolarCalculator.swift`.
+- **SettingsService** (`SettingsService.cpp`) — hand-rolled flat JSON (`Json.h`), debounced 250ms write to `%APPDATA%\KelvinShift\settings.json`. Keeps the WPF build's PascalCase keys so an existing settings file still loads. Raises `SettingsChanged` / `PropertyChanged` via a small `Event<>` multicast.
+- **TrayIconService** (`TrayIconService.cpp`) — `Shell_NotifyIcon` v4. Dynamic phase glyph (sun/transition/moon/bed/off, phase-colored) drawn at runtime with GDI+, regenerated on every `StateChanged`. The right-click menu is `TrackPopupMenuEx` + an owner-drawn dark `HMENU` (see `TrayMenu.cpp`) with aligned check / vector-icon / label / value columns.
+- **PreferencesWindow** (`PreferencesWindow.cpp`) — custom-chrome Mica window, same sections as macOS: Color Temperature, Brightness, Bedtime, Schedule, Transition, General. Windowless retained-mode controls (`Controls.cpp` — sliders, toggles, radios, dropdowns, vector icons), inertial spring scrolling. Numeric fields are real `EDIT` children shown only while editing (edit-on-click). Slider press → `Engine.StartPreview`.
+- **GammaRangeService** (`GammaRangeService.cpp`) — the opt-in gamma-range toggle; re-launches the exe elevated (`--set-gamma-range`, `runas` verb) to write/clear `HKLM\...\ICM\GdiIcmGammaRange`.
 - **LaunchAtLoginService** — toggles `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\KelvinShift = "<exe>" --tray`. No admin needed at runtime.
+
+Data flow:
+```
+SettingsService.SettingsChanged → ScheduleEngine.Tick() → GammaService.ApplyKelvinWithBrightness()
+                                                        → ScheduleEngine.StateChanged
+                                                        → TrayIconService re-renders the glyph + menu
+```
 
 ### Windows-specific install steps
 
 The installer:
-- Installs to `%ProgramFiles%\KelvinShift` (admin required).
-- Writes `HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ICM\GdiIcmGammaRange = 256` (DWORD) to lift the Vista+ gamma-range cap that otherwise clips warm temps below ~3500K. Our D3DKMT path mostly bypasses this anyway, but it's belt-and-suspenders for HDR fallback scenarios.
+- Installs the single exe to `%ProgramFiles%\KelvinShift` (admin required for Program Files).
 - Optionally writes the HKCU Run key for auto-start.
+- Does **not** write the gamma-range registry value. That's an opt-in toggle in Preferences → General (warm temps below ~3500K), applied by `GammaRangeService` via a self-elevating re-launch. The uninstaller's `--uninstall-cleanup` clears it if set.
 
 ## Shared algorithm constants
 
@@ -100,4 +111,4 @@ The installer:
 
 ## Cross-platform parity
 
-When changing shared behavior (blackbody table, schedule logic, bedtime spec, transition math, solar algorithm), update both `macos/Sources/KelvinShift/*.swift` AND `win/src/KelvinShift/Services/*.cs`. The two ports must produce identical Kelvin/brightness values for the same settings + wall-clock time.
+When changing shared behavior (blackbody table, schedule logic, bedtime spec, transition math, solar algorithm), update both `macos/Sources/KelvinShift/*.swift` AND `win/src/*.cpp`. The two ports must produce identical Kelvin/brightness values for the same settings + wall-clock time.

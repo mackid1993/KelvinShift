@@ -1,7 +1,7 @@
 ; KelvinShift — Inno Setup installer
 ;
-; Builds KelvinShift-<version>-Setup.exe from the dotnet publish output.
-; Run via build.ps1, or directly: iscc setup.iss
+; Packages the native KelvinShift.exe (pure Win32 / C++ build) into
+; KelvinShift-<version>-Setup.exe. Run via build.ps1, or directly: iscc setup.iss
 
 #define MyAppName    "KelvinShift"
 #define MyAppVersion "1.1.0"
@@ -27,7 +27,7 @@ Compression=lzma2/ultra
 SolidCompression=yes
 OutputDir=..
 OutputBaseFilename={#MyAppName}-{#MyAppVersion}-Setup
-SetupIconFile=..\src\KelvinShift\AppIcon.ico
+SetupIconFile=..\src\AppIcon.ico
 WizardStyle=modern
 ShowLanguageDialog=no
 DisableWelcomePage=no
@@ -42,9 +42,8 @@ Name: "desktopicon";  Description: "Create a &desktop shortcut"; GroupDescriptio
 Name: "startupicon";  Description: "Start KelvinShift when Windows starts"; GroupDescription: "Startup:"; Flags: checkedonce
 
 [Files]
-Source: "..\src\KelvinShift\bin\Release\net8.0-windows10.0.19041.0\win-x64\publish\*"; \
-    DestDir: "{app}"; \
-    Flags: ignoreversion recursesubdirs createallsubdirs
+; The C++ build is a single self-contained exe — no .NET runtime to ship.
+Source: "..\build\KelvinShift.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -70,10 +69,10 @@ Filename: "{app}\{#MyAppExeName}"; \
     Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; Tear down any MHC color profile association + ICC file BEFORE removing the
-; EXE (so AdvancedColorService.Reset can run cleanly).
+; Reset the gamma ramp to identity BEFORE removing the EXE, so the display
+; reverts to its prior calibration on uninstall.
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--uninstall-cleanup"; \
-    Flags: runhidden waituntilterminated; RunOnceId: "KelvinShiftCleanupProfiles"
+    Flags: runhidden waituntilterminated; RunOnceId: "KelvinShiftGammaReset"
 
 ; Best-effort kill of running instance before uninstall removes files
 Filename: "taskkill.exe"; Parameters: "/F /IM {#MyAppExeName}"; Flags: runhidden; RunOnceId: "KillKelvinShift"
