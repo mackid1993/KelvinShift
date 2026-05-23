@@ -227,8 +227,18 @@ TrayIconService::TrayIconService(ScheduleEngine& engine, SettingsService& settin
     wc.hInstance = GetModuleHandleW(nullptr);
     wc.lpszClassName = kClassName;
     RegisterClassW(&wc);
-    hwnd_ = CreateWindowExW(0, kClassName, L"", 0, 0, 0, 0, 0,
-                            HWND_MESSAGE, nullptr, GetModuleHandleW(nullptr), this);
+    // Top-level (not HWND_MESSAGE): the shell broadcasts "TaskbarCreated"
+    // only to top-level windows, so a message-only window would miss the
+    // Explorer-restart notification and the icon would stay gone until the
+    // process restarts. WS_EX_TOOLWINDOW keeps it out of Alt-Tab; we never
+    // ShowWindow so it stays invisible.
+    hwnd_ = CreateWindowExW(WS_EX_TOOLWINDOW, kClassName, L"", WS_POPUP, 0, 0, 0, 0,
+                            nullptr, nullptr, GetModuleHandleW(nullptr), this);
+
+    // If we ever run elevated, UIPI would otherwise drop the medium-IL
+    // TaskbarCreated broadcast from Explorer.
+    if (taskbarCreatedMsg_ != 0)
+        ChangeWindowMessageFilterEx(hwnd_, taskbarCreatedMsg_, MSGFLT_ALLOW, nullptr);
 
     // Re-render the glyph whenever the schedule state or settings change.
     engine_.StateChanged.Add([this](const ScheduleState&) { Refresh(); });
