@@ -211,6 +211,14 @@ struct PreferencesView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            HStack {
+                Spacer()
+                Text("Developed by David Brustein")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.top, 4)
+
         }
         .padding()
         .frame(maxWidth: .infinity, alignment: .leading)
