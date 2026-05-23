@@ -4,8 +4,9 @@
 ; KelvinShift-<version>-Setup.exe. Run via build.ps1, or directly: iscc setup.iss
 
 #define MyAppName    "KelvinShift"
-#define MyAppVersion "1.1.0"
-#define MyAppPublisher "mackid1993"
+#define MyAppVersion "1.1.1"
+#define MyAppPublisher "David Brustein"
+#define MyAppCopyright "Copyright (C) 2026 David Brustein"
 #define MyAppExeName "KelvinShift.exe"
 #define MyAppURL     "https://github.com/mackid1993/kelvinshift"
 
@@ -16,6 +17,7 @@ AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
+AppCopyright={#MyAppCopyright}
 DefaultDirName={commonpf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes

@@ -23,7 +23,7 @@ KelvinShift runs as a menu-bar item (no Dock icon). Click the icon for the curre
 
 ### Windows
 
-The Windows app is a **pure Win32 / C++ build** — a single ~0.5 MB native executable with no .NET runtime to ship. Download `KelvinShift-1.1.0-Setup.exe` from the latest release and run it. UAC will prompt — admin is needed to install into `%ProgramFiles%`.
+The Windows app is a **pure Win32 / C++ build** — a single ~0.5 MB native executable with no .NET runtime to ship. Download `KelvinShift-1.1.1-Setup.exe` from the latest release and run it. UAC will prompt — admin is needed to install into `%ProgramFiles%`.
 
 The installer:
 
@@ -82,7 +82,7 @@ cd win
 Output:
 
 - Native exe: `win\build\KelvinShift.exe` (~0.5 MB, statically linked — nothing else to ship)
-- Installer: `win\KelvinShift-1.1.0-Setup.exe` (~2 MB)
+- Installer: `win\KelvinShift-1.1.1-Setup.exe` (~2 MB)
 
 To bump the version: edit `win\src\app.rc` / `win\src\app.manifest` and `win\installer\setup.iss` (`MyAppVersion`).
 

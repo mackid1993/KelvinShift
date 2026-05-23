@@ -40,6 +40,7 @@ enum {
     W_TR_NB_L, W_TR_NB_S, W_TR_NB_V,
     W_TR_HELP, W_TR_DEMOBTN, W_TR_PROG, W_TR_DEMOPCT, W_TR_FOOT,
     W_G_ENABLED, W_G_STARTUP, W_G_SEP, W_G_EXTRANGE, W_G_EXTHELP, W_G_EXTSTATUS,
+    W_FOOTER_ATTR,
     W_COUNT
 };
 
@@ -403,6 +404,11 @@ void PreferencesWindow::BuildUI()
     w_[W_G_EXTSTATUS].textProvider = [this] { return extRangeStatus_; };
     w_[W_G_EXTSTATUS].visibleIf = [this] { return !extRangeStatus_.empty(); };
 
+    // Quiet "Developed by David Brustein" line in the bottom-right of the
+    // scrolling content — mirrors the macOS Preferences footer.
+    label(W_FOOTER_ATTR, L"Developed by David Brustein", 11, true);
+    w_[W_FOOTER_ATTR].align = 1;
+
     // Kelvin field read/commit.
     fields_[FI_DAYK].read = [this] { return (double)settings_.DayKelvin(); };
     fields_[FI_DAYK].commit = [this](double v) { settings_.DayKelvin((int)v); };
@@ -591,6 +597,14 @@ void PreferencesWindow::Layout()
         }
         cards_[4].r = { cardL, top, cardR, gy + S(8) };
         y = cards_[4].r.bottom + S(12);
+    }
+
+    // Attribution footer — right-aligned under the last card, outside any
+    // card panel. Painted in its own pass after the cards loop in Paint().
+    {
+        int fh = S(18);
+        w_[W_FOOTER_ATTR].bounds = { cardL, y, cardR, y + fh };
+        y += fh + S(4);
     }
 
     contentH_ = y + S(8);
@@ -797,6 +811,13 @@ void PreferencesWindow::Paint()
 
             for (int id : cardIds_[ci])
                 PaintWidget(g, dpi_, w_[id], mouse_, captured_ >= 0);
+        }
+
+        // Attribution footer (lives outside any card).
+        {
+            const RECT& fr = w_[W_FOOTER_ATTR].bounds;
+            if (fr.bottom - scrollY_ >= 0 && fr.top - scrollY_ <= H)
+                PaintWidget(g, dpi_, w_[W_FOOTER_ATTR], mouse_, captured_ >= 0);
         }
         g.Restore(st);
 
