@@ -1,14 +1,16 @@
 #pragma once
 
 // Applies color temperature via the GPU gamma ramp. Port of
-// win/src/KelvinShift/Services/GammaService.cs.
+// win32/src/KelvinShift/Services/GammaService.cs.
 //
 // Write strategy: stable ramp (no rotating offset) + read-back check before
 // each watchdog reapply. The watchdog only writes when the GPU LUT actually
 // deviates — every unnecessary SetDeviceGammaRamp call is itself visible as
 // flicker, so suppressing them keeps the display calm.
 //
-// Color math: 91-entry Redshift blackbody table (CIE, Ingo Thies 2013).
+// Color math: 91-entry blackbody table generated from Planck's law,
+// the CIE 1931 2° standard observer, and the sRGB transform
+// (IEC 61966-2-1) — see tools/generate_blackbody_table.py.
 // D65 at 6500K. Identical to the macOS port.
 
 #include <windows.h>

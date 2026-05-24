@@ -2,7 +2,7 @@
 
 **Accurate Kelvin-based color temperature scheduling — macOS and Windows.**
 
-Set **exact Kelvin values** for daytime, nighttime, and (optional) bedtime display color temperatures, with automatic scheduling and smooth transitions. KelvinShift uses scientifically accurate blackbody radiation values from the Redshift project (CIE color matching, Ingo Thies 2013) so 2700 K really is 2700 K.
+Set **exact Kelvin values** for daytime, nighttime, and (optional) bedtime display color temperatures, with automatic scheduling and smooth transitions. KelvinShift computes its 91-entry blackbody RGB table from primary public-domain sources — Planck's law, the CIE 1931 2° standard observer, and the sRGB linear transform (IEC 61966-2-1) — so 2700 K really is 2700 K. The full derivation is in [`tools/generate_blackbody_table.py`](tools/generate_blackbody_table.py).
 
 Made for personal use; sharing as-is with no support or warranty.
 
@@ -23,7 +23,7 @@ KelvinShift runs as a menu-bar item (no Dock icon). Click the icon for the curre
 
 ### Windows
 
-The Windows app is a **pure Win32 / C++ build** — a single ~0.5 MB native executable with no .NET runtime to ship. Download `KelvinShift-1.1.1-Setup.exe` from the latest release and run it. UAC will prompt — admin is needed to install into `%ProgramFiles%`.
+The Windows app is a **pure Win32 / C++ build** — a single ~0.5 MB native executable with no .NET runtime to ship. Download the `KelvinShift-*-Setup.exe` from the latest release and run it. UAC will prompt — admin is needed to install into `%ProgramFiles%`.
 
 The installer:
 
@@ -70,7 +70,7 @@ open /Applications/KelvinShift.app
 ### Windows
 
 ```powershell
-cd win
+cd win32
 .\build.ps1                   # compile the native exe + build the Inno installer
 .\build.ps1 -SkipInstaller    # compile only (no Inno Setup needed)
 .\build.ps1 -Clean            # wipe the build dir first
@@ -81,10 +81,10 @@ cd win
 
 Output:
 
-- Native exe: `win\build\KelvinShift.exe` (~0.5 MB, statically linked — nothing else to ship)
-- Installer: `win\KelvinShift-1.1.1-Setup.exe` (~2 MB)
+- Native exe: `win32\build\KelvinShift.exe` (~0.5 MB, statically linked — nothing else to ship)
+- Installer: `win32\KelvinShift-<version>-Setup.exe` (~2 MB)
 
-To bump the version: edit `win\src\app.rc` / `win\src\app.manifest` and `win\installer\setup.iss` (`MyAppVersion`).
+To bump the version: edit `win32\src\app.rc` / `win32\src\app.manifest` and `win32\installer\setup.iss` (`MyAppVersion`).
 
 ## Features
 
@@ -132,13 +132,13 @@ Settings live at:
 - **macOS:** `defaults read com.kelvinshift.app` (`UserDefaults` under `ks_*` keys)
 - **Windows:** `%APPDATA%\KelvinShift\settings.json` — editable directly; the app rereads on every restart. Writes are debounced 250 ms while you drag sliders.
 
-The two ports share identical schedule semantics: for the same settings and wall-clock time, both produce the same Kelvin/brightness values (modulo one intentional divergence — macOS uses Hermite smoothing on the lerp while Windows uses linear).
+The two ports share identical schedule semantics: for the same settings and wall-clock time, both produce the same Kelvin/brightness values, including the same Hermite (`t² × (3 − 2t)`) smoothstep on every transition.
 
 ## Architecture
 
 ```
 macos/    Swift / SwiftUI / AppKit — menu-bar app
-win/      C++ / Win32 / Inno Setup — tray app with installer
+win32/      C++ / Win32 / Inno Setup — tray app with installer
 ```
 
 See [CLAUDE.md](CLAUDE.md) for the full architectural notes (per-platform component breakdown, data flow, shared constants).

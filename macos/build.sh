@@ -44,9 +44,9 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
     <key>CFBundleIdentifier</key>
     <string>com.kelvinshift.app</string>
     <key>CFBundleVersion</key>
-    <string>1.1.1</string>
+    <string>2.0.1</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.1.1</string>
+    <string>2.0.1</string>
     <key>CFBundleExecutable</key>
     <string>KelvinShift</string>
     <key>CFBundlePackageType</key>
@@ -60,15 +60,15 @@ cat > "$APP/Contents/Info.plist" << 'PLIST'
     <key>NSLocationUsageDescription</key>
     <string>KelvinShift uses your location to calculate sunrise/sunset for automatic color temperature scheduling.</string>
     <key>NSHumanReadableCopyright</key>
-    <string>MIT License</string>
+    <string>Copyright © 2026 David Brustein — PolyForm Strict License 1.0.0</string>
 </dict>
 </plist>
 PLIST
 
-# Strip xattrs and AppleDouble (._*) files. If either remains when we sign,
-# they get sealed in (or worse, appear later and invalidate the seal — which
-# macOS reports as "the app is damaged and can't be opened").
-find "$APP" -name '._*' -delete
+# Strip xattrs, AppleDouble (._*), and .DS_Store files. If any remain when
+# we sign, they get sealed in (or worse, appear later and invalidate the
+# seal — which macOS reports as "the app is damaged and can't be opened").
+find "$APP" \( -name '._*' -o -name '.DS_Store' \) -delete
 xattr -cr "$APP"
 
 # Ad-hoc sign (required for Gatekeeper on recent macOS). --deep covers nested

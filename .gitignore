@@ -6,20 +6,20 @@
 .swiftpm/
 
 # Windows build
-win/build/
-win/bin/
-win/obj/
-win/src/**/bin/
-win/src/**/obj/
-win/KelvinShift-*-Setup.exe
-win/installer/Setup.exe
-win/installer/*.iss.bak
+win32/build/
+win32/bin/
+win32/obj/
+win32/src/**/bin/
+win32/src/**/obj/
+win32/KelvinShift-*-Setup.exe
+win32/installer/Setup.exe
+win32/installer/*.iss.bak
 
 # Analysis scratch (not for repo)
-win/installer/flux.exe
-win/installer/reverse*.py
-win/installer/make_rounded_icon.py
-win/installer/icon_check_*.png
+win32/installer/flux.exe
+win32/installer/reverse*.py
+win32/installer/make_rounded_icon.py
+win32/installer/icon_check_*.png
 
 # IDE / editor
 .vs/

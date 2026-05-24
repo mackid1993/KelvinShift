@@ -22,10 +22,12 @@ double Progress(int t, int from, int length)
     return std::min(1.0, (double)elapsed / std::max(1, length));
 }
 
-// Linear interpolation — constant rate of change so a fixed slice of time
-// always moves the same colour delta regardless of where in the ramp it is.
-int LerpI(int a, int b, double t) { return a + (int)llround((b - a) * t); }
-double LerpD(double a, double b, double t) { return a + (b - a) * t; }
+// Hermite (smoothstep) interpolation — zero-derivative at both endpoints,
+// so the colour shift eases in/out instead of starting and stopping abruptly.
+// Identical to the macOS port's `lerp`/`lerpD` (s = t²·(3−2t)).
+static inline double Smoothstep(double t) { return t * t * (3.0 - 2.0 * t); }
+int LerpI(int a, int b, double t) { return a + (int)llround((b - a) * Smoothstep(t)); }
+double LerpD(double a, double b, double t) { return a + (b - a) * Smoothstep(t); }
 
 int MinutesFromMidnight(const SYSTEMTIME& d) { return d.wHour * 60 + d.wMinute; }
 
