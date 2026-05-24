@@ -38,7 +38,14 @@ The gamma-range registry tweak that allows color temperatures below ~3500 K is a
 
 There's no paid Apple Developer ID or Authenticode certificate behind these builds, so each OS will warn the first time:
 
-**macOS (Gatekeeper):** *"KelvinShift" cannot be opened because it is from an unidentified developer.* Right-click (or Control-click) the `.app` in Finder → **Open** → **Open** in the confirmation dialog. macOS remembers the choice after that. Alternatively, run `xattr -dr com.apple.quarantine /Applications/KelvinShift.app` once.
+**macOS (Gatekeeper) — Ventura (13) and later:** *"KelvinShift" cannot be opened because it is from an unidentified developer."* On modern macOS the Finder right-click bypass is unreliable (and removed entirely in Sequoia), so use **System Settings**:
+
+1. Try to open the app once — macOS will block it.
+2. Open **System Settings → Privacy & Security**.
+3. Scroll to the bottom; you'll see *"KelvinShift" was blocked to protect your Mac.*
+4. Click **Open Anyway**. Authenticate with password / Touch ID, then click **Open** in the final confirmation dialog.
+
+macOS remembers the choice after that — no further prompts on subsequent launches. Alternatively, in Terminal: `xattr -dr com.apple.quarantine /Applications/KelvinShift.app` clears the quarantine bit in one command and the app opens normally.
 
 **Windows (SmartScreen):** *"Windows protected your PC"*. Click **More info** → **Run anyway**. Only the installer triggers this — the installed exe runs without further prompts.
 
