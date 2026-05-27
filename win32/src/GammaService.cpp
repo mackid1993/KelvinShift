@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 // ── Internal gamma write path ─────────────────────────────────────────────
 // mscms!InternalSetDeviceGammaRamp writes the gamma at a layer the kernel
@@ -59,6 +60,29 @@ static void Log(const std::string& msg)
     DWORD written;
     WriteFile(f, line, (DWORD)n, &written, nullptr);
     CloseHandle(f);
+}
+
+// ── Per-monitor enumeration ───────────────────────────────────────────────
+// GetDC(NULL) returns a DC bound only to the primary display — on a multi-
+// monitor desktop the secondary panel keeps its identity LUT (and on some
+// driver permutations the call is rejected outright). We write per-device
+// via CreateDCW(L"DISPLAY", deviceName) instead, the same pattern f.lux /
+// DisplayCAL / Iris use.
+static std::vector<std::wstring> EnumActiveDisplayDevices()
+{
+    std::vector<std::wstring> out;
+    DISPLAY_DEVICEW dd{};
+    dd.cb = sizeof(dd);
+    for (DWORD i = 0; EnumDisplayDevicesW(nullptr, i, &dd, 0); ++i)
+    {
+        if ((dd.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP) &&
+            !(dd.StateFlags & DISPLAY_DEVICE_MIRRORING_DRIVER))
+        {
+            out.emplace_back(dd.DeviceName);
+        }
+        dd.cb = sizeof(dd);
+    }
+    return out;
 }
 
 // ── Blackbody table (Planck + CIE 1931 + IEC sRGB) ────────────────────────
@@ -241,57 +265,92 @@ void GammaService::BuildRamp(float r, float g, float b)
 
 bool GammaService::GammaMatchesExpected()
 {
-    HDC hdc = GetDC(nullptr);
-    if (!hdc) return true; // assume OK rather than spam writes
-    BOOL ok = GetDeviceGammaRamp(hdc, probeBuffer_);
-    ReleaseDC(nullptr, hdc);
-    if (!ok) return true;
+    auto devices = EnumActiveDisplayDevices();
+    if (devices.empty()) return true; // assume OK rather than spam writes
 
-    // Sample channel mid-points — catches the identity reset (mid = 0x8000)
-    // cheaply. Tolerance absorbs floating-point quantization in our build.
+    // Drift on any monitor means we need to re-write everywhere. Sample the
+    // channel mid-points — catches the identity reset (mid = 0x8000) cheaply.
     const int tol = 256;
-    return abs(probeBuffer_[128] - ramp_[128]) <= tol
-        && abs(probeBuffer_[256 + 128] - ramp_[256 + 128]) <= tol
-        && abs(probeBuffer_[512 + 128] - ramp_[512 + 128]) <= tol;
+    for (const auto& name : devices)
+    {
+        HDC hdc = CreateDCW(L"DISPLAY", name.c_str(), nullptr, nullptr);
+        if (!hdc) continue;
+        BOOL ok = GetDeviceGammaRamp(hdc, probeBuffer_);
+        DeleteDC(hdc);
+        if (!ok) continue;
+
+        if (abs(probeBuffer_[128] - ramp_[128]) > tol
+         || abs(probeBuffer_[256 + 128] - ramp_[256 + 128]) > tol
+         || abs(probeBuffer_[512 + 128] - ramp_[512 + 128]) > tol)
+            return false;
+    }
+    return true;
 }
 
 bool GammaService::WriteRamp()
 {
-    HDC hdc = GetDC(nullptr);
-    if (!hdc)
+    auto devices = EnumActiveDisplayDevices();
+
+    // Defensive fallback: if enumeration ever returns nothing, write to the
+    // primary-screen DC so we at least light up one monitor.
+    if (devices.empty())
     {
-        Log("GetDC(NULL) returned 0");
-        return false;
+        HDC hdc = GetDC(nullptr);
+        if (!hdc) { Log("GetDC(NULL) returned 0 and EnumDisplayDevices empty"); return false; }
+        bool ok = false;
+        for (int attempt = 0; attempt < 3 && !ok; ++attempt)
+            ok = g_internalSetGamma
+                ? (g_internalSetGamma(hdc, ramp_, 0) != FALSE)
+                : (SetDeviceGammaRamp(hdc, ramp_) != FALSE);
+        ReleaseDC(nullptr, hdc);
+        return ok;
     }
 
-    // Some drivers fail the first call but succeed on the second. Prefer the
-    // kernel path; fall back to the documented one if Internal* is missing.
-    bool ok = false;
-    for (int attempt = 0; attempt < 3 && !ok; ++attempt)
+    // Write to every attached monitor via its own CreateDC'd HDC. The old
+    // GetDC(NULL) path only touched the primary display on multi-monitor
+    // configs; the secondary panel stayed at identity.
+    int writtenCount = 0;
+    DWORD lastErr = 0;
+    for (const auto& name : devices)
     {
-        ok = g_internalSetGamma
-            ? (g_internalSetGamma(hdc, ramp_, 0) != FALSE)
-            : (SetDeviceGammaRamp(hdc, ramp_) != FALSE);
+        HDC hdc = CreateDCW(L"DISPLAY", name.c_str(), nullptr, nullptr);
+        if (!hdc) { lastErr = GetLastError(); continue; }
+
+        // Some drivers fail the first call but succeed on the second. Prefer
+        // the kernel path; fall back to the documented one if Internal* is missing.
+        bool ok = false;
+        for (int attempt = 0; attempt < 3 && !ok; ++attempt)
+        {
+            ok = g_internalSetGamma
+                ? (g_internalSetGamma(hdc, ramp_, 0) != FALSE)
+                : (SetDeviceGammaRamp(hdc, ramp_) != FALSE);
+        }
+        if (ok) ++writtenCount;
+        else    lastErr = GetLastError();
+
+        DeleteDC(hdc); // CreateDC pairs with DeleteDC, not ReleaseDC.
     }
 
-    if (!ok)
+    if (writtenCount == 0)
     {
-        char buf[160];
-        snprintf(buf, sizeof(buf), "gamma write failed (Win32 err=%lu, path=%s)",
-                 GetLastError(), g_internalSetGamma ? "internal" : "public");
+        char buf[200];
+        snprintf(buf, sizeof(buf),
+                 "gamma write failed across all %d display(s) (last err=%lu, path=%s)",
+                 (int)devices.size(), lastErr,
+                 g_internalSetGamma ? "internal" : "public");
         Log(buf);
     }
     else if (!loggedFirstSuccess_)
     {
-        char buf[200];
+        char buf[240];
         snprintf(buf, sizeof(buf),
-                 "%s OK rampSample=[R0=%u R128=%u R255=%u G128=%u B128=%u]",
+                 "%s OK on %d/%d display(s) rampSample=[R0=%u R128=%u R255=%u G128=%u B128=%u]",
                  g_internalSetGamma ? "InternalSetDeviceGammaRamp" : "SetDeviceGammaRamp",
+                 writtenCount, (int)devices.size(),
                  ramp_[0], ramp_[128], ramp_[255], ramp_[256 + 128], ramp_[512 + 128]);
         Log(buf);
         loggedFirstSuccess_ = true;
     }
 
-    ReleaseDC(nullptr, hdc);
-    return ok;
+    return writtenCount > 0;
 }

@@ -4,7 +4,7 @@
 ; KelvinShift-<version>-Setup.exe. Run via build.ps1, or directly: iscc setup.iss
 
 #define MyAppName    "KelvinShift"
-#define MyAppVersion "2.0.1"
+#define MyAppVersion "2.0.2"
 #define MyAppPublisher "David Brustein"
 #define MyAppCopyright "Copyright (C) 2026 David Brustein"
 #define MyAppExeName "KelvinShift.exe"
