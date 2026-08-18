@@ -8,6 +8,7 @@
 // functions (CIE 1931), and the sRGB linear transform (IEC 61966-2-1).
 // Full derivation in tools/generate_blackbody_table.py.
 
+import AppKit
 import Foundation
 import CoreGraphics
 
@@ -120,8 +121,17 @@ final class GammaController {
     private var currentBrightness: Double = 1.0
     private var hasAppliedGamma: Bool = false
 
+    /// Displays the current ramp has actually been written to. Compared against
+    /// the live online-display list so a monitor that appeared since the last
+    /// write can't be swallowed by the redundant-write gate below.
+    private var appliedDisplayIDs: Set<CGDirectDisplayID> = []
+
+    /// Pending post-reconfiguration re-asserts (see scheduleReapplyAfterDisplayChange).
+    private var pendingReapplies: [DispatchWorkItem] = []
+
     private init() {
         saveOriginalGamma()
+        observeDisplayReconfiguration()
     }
 
     // MARK: - Public API
@@ -145,9 +155,14 @@ final class GammaController {
         // Skip redundant gamma-table writes. Each CGSetDisplayTransferByTable call
         // causes Chromium 148+ on macOS 26.4 to re-query the display color profile,
         // producing a visible flash. Only re-apply when the target actually changes.
+        // The display set is part of the gate: docking adds a monitor without
+        // changing the target Kelvin, and a value-only check would skip it
+        // forever (until something else forced a write — which is why toggling
+        // KelvinShift off and on used to "fix" a freshly docked screen).
         if hasAppliedGamma
             && clampedKelvin == currentKelvin
-            && abs(clampedBrightness - currentBrightness) < 0.001 {
+            && abs(clampedBrightness - currentBrightness) < 0.001
+            && appliedDisplayIDs == Set(getDisplayIDs()) {
             return true
         }
 
@@ -172,10 +187,68 @@ final class GammaController {
 
     /// Reset gamma to original values (6500K equivalent).
     func resetGamma() {
+        cancelPendingReapplies()
         currentKelvin = 6500
         currentBrightness = 1.0
         hasAppliedGamma = false
+        appliedDisplayIDs = []
         CGDisplayRestoreColorSyncSettings()
+    }
+
+    // MARK: - Display Reconfiguration
+
+    /// Docking, undocking, display mode changes, and wake all reprogram the
+    /// hardware LUT behind our back — sometimes only on the arriving monitor,
+    /// sometimes on every one of them. The schedule tick can't recover on its
+    /// own because the target Kelvin hasn't changed, so re-assert the ramp
+    /// whenever the display configuration moves. (Same shape as the Windows
+    /// GammaWatchdog: react to the event, then let a read-back decide whether a
+    /// write is actually needed.)
+    private func observeDisplayReconfiguration() {
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.scheduleReapplyAfterDisplayChange()
+        }
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.scheduleReapplyAfterDisplayChange()
+        }
+    }
+
+    /// A dock handshake emits a burst of screen-parameter notifications, and the
+    /// arriving panel is not necessarily ready to accept a gamma table when the
+    /// first one lands. Coalesce the burst, then re-assert on a short ladder.
+    /// Every attempt is read-back gated, so once the ramp takes, the remaining
+    /// attempts write nothing.
+    private static let reapplyDelays: [TimeInterval] = [0.4, 1.5, 4.0]
+
+    private func scheduleReapplyAfterDisplayChange() {
+        cancelPendingReapplies()
+        pendingReapplies = Self.reapplyDelays.map { delay in
+            let item = DispatchWorkItem { [weak self] in self?.reassertCurrentRamp() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: item)
+            return item
+        }
+    }
+
+    private func cancelPendingReapplies() {
+        pendingReapplies.forEach { $0.cancel() }
+        pendingReapplies = []
+    }
+
+    /// Re-write the current Kelvin/brightness to every online display, bypassing
+    /// the value cache. A no-op on displays that still hold the right ramp.
+    private func reassertCurrentRamp() {
+        // Nothing of ours is on screen (app disabled, or reset) — leave the
+        // displays with whatever ColorSync gave them.
+        guard hasAppliedGamma else { return }
+        let rgb = Self.kelvinToRGB(currentKelvin)
+        _ = applyRGBMultipliers(r: rgb.r, g: rgb.g, b: rgb.b, brightness: Float(currentBrightness))
     }
 
     // MARK: - Color Temperature Conversion
@@ -246,10 +319,17 @@ final class GammaController {
 
     private func applyRGBMultipliers(r: Float, g: Float, b: Float, brightness: Float = 1.0) -> Bool {
         var success = true
+        var written: Set<CGDirectDisplayID> = []
 
         for displayID in getDisplayIDs() {
             let capacity = CGDisplayGammaTableCapacity(displayID)
             let count = Int(capacity)
+
+            // A display still mid-handshake can report a degenerate capacity,
+            // and the ramp math below divides by count - 1. Skipping it also
+            // keeps it out of `written`, so the display-set gate retries on the
+            // next tick instead of writing NaNs now.
+            guard count > 1 else { continue }
 
             // Create linear ramps scaled by the RGB multipliers and brightness
             var redTable = [CGGammaValue](repeating: 0, count: count)
@@ -263,6 +343,13 @@ final class GammaController {
                 blueTable[i] = value * CGGammaValue(b) * CGGammaValue(brightness)
             }
 
+            written.insert(displayID)
+
+            // Every LUT write is a visible display update, so skip the displays
+            // already holding the ramp we were about to write. This is what
+            // makes the post-dock retry ladder free.
+            if rampMatches(displayID, redTable, greenTable, blueTable) { continue }
+
             let result = CGSetDisplayTransferByTable(
                 displayID,
                 UInt32(count),
@@ -273,10 +360,46 @@ final class GammaController {
 
             if result != .success {
                 NSLog("[KelvinShift] Failed to set gamma for display \(displayID)")
+                written.remove(displayID)
                 success = false
             }
         }
 
+        appliedDisplayIDs = written
         return success
+    }
+
+    /// True when the display's current transfer table already matches the one we
+    /// are about to write. Compared with a tolerance: the hardware LUT quantizes
+    /// on the way in, so a read-back never comes back bit-exact.
+    private func rampMatches(
+        _ displayID: CGDirectDisplayID,
+        _ red: [CGGammaValue],
+        _ green: [CGGammaValue],
+        _ blue: [CGGammaValue]
+    ) -> Bool {
+        let count = red.count
+        var sampleCount: UInt32 = 0
+        var currentRed = [CGGammaValue](repeating: 0, count: count)
+        var currentGreen = [CGGammaValue](repeating: 0, count: count)
+        var currentBlue = [CGGammaValue](repeating: 0, count: count)
+
+        let result = CGGetDisplayTransferByTable(
+            displayID,
+            UInt32(count),
+            &currentRed,
+            &currentGreen,
+            &currentBlue,
+            &sampleCount
+        )
+        guard result == .success, Int(sampleCount) == count else { return false }
+
+        let tolerance: CGGammaValue = 1.0 / 256.0
+        for i in 0..<count {
+            if abs(currentRed[i]   - red[i])   > tolerance { return false }
+            if abs(currentGreen[i] - green[i]) > tolerance { return false }
+            if abs(currentBlue[i]  - blue[i])  > tolerance { return false }
+        }
+        return true
     }
 }

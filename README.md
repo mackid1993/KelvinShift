@@ -8,11 +8,11 @@ Made for personal use; sharing as-is with no support or warranty.
 
 ## Install
 
-Pre-built binaries are on the [Releases page](../../releases/latest). Both builds are **signed ad-hoc only**, so each OS warns the first time you launch — see [First-launch warnings](#first-launch-warnings) below.
+Pre-built binaries are on the [Releases page](../../releases/latest). The macOS build is signed with a Developer ID and notarized by Apple, so it opens without a Gatekeeper prompt. The Windows build is unsigned and trips SmartScreen the first time — see [First-launch warnings](#first-launch-warnings) below.
 
 ### macOS
 
-Download `KelvinShift.app.zip` from the latest release, unzip, then:
+Download `KelvinShift.zip` from the latest release, unzip, then:
 
 ```bash
 cp -R KelvinShift.app /Applications/
@@ -36,18 +36,9 @@ The gamma-range registry tweak that allows color temperatures below ~3500 K is a
 
 ### First-launch warnings
 
-There's no paid Apple Developer ID or Authenticode certificate behind these builds, so each OS will warn the first time:
+**macOS:** none. The build is Developer ID signed, notarized, and stapled, so it launches straight from the download with no Gatekeeper prompt and no `xattr` incantation.
 
-**macOS (Gatekeeper) — Ventura (13) and later:** *"KelvinShift" cannot be opened because it is from an unidentified developer."* On modern macOS the Finder right-click bypass is unreliable (and removed entirely in Sequoia), so use **System Settings**:
-
-1. Try to open the app once — macOS will block it.
-2. Open **System Settings → Privacy & Security**.
-3. Scroll to the bottom; you'll see *"KelvinShift" was blocked to protect your Mac.*
-4. Click **Open Anyway**. Authenticate with password / Touch ID, then click **Open** in the final confirmation dialog.
-
-macOS remembers the choice after that — no further prompts on subsequent launches. Alternatively, in Terminal: `xattr -dr com.apple.quarantine /Applications/KelvinShift.app` clears the quarantine bit in one command and the app opens normally.
-
-**Windows (SmartScreen):** *"Windows protected your PC"*. Click **More info** → **Run anyway**. Only the installer triggers this — the installed exe runs without further prompts.
+**Windows (SmartScreen):** *"Windows protected your PC"*. There's no Authenticode certificate behind the Windows build, so click **More info** → **Run anyway**. Only the installer triggers this — the installed exe runs without further prompts.
 
 ## Build from source
 
@@ -65,7 +56,9 @@ cd macos
 ./build.sh
 ```
 
-`build.sh` runs `swift build -c release`, assembles the `.app` bundle, generates `Info.plist`, ad-hoc codesigns, and writes both `KelvinShift.app` and `KelvinShift.app.zip` (the release artifact).
+`build.sh` runs `swift build -c release`, assembles the `.app` bundle, generates `Info.plist`, Developer ID signs it with the hardened runtime, submits it to Apple for notarization, staples the ticket, and writes both `KelvinShift.app` and `KelvinShift.zip` (the release artifact).
+
+Signing and notarization need a Developer ID Application certificate in the login keychain plus a `notarytool` credential profile (`xcrun notarytool store-credentials`). Override either with `KS_SIGN_ID` / `KS_NOTARY_PROFILE`. Without a matching certificate the script falls back to ad-hoc signing and skips notarization; `./build.sh --no-notarize` signs but skips the Apple round trip for faster local iteration.
 
 Install:
 

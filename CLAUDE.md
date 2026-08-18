@@ -27,7 +27,7 @@ cp -R KelvinShift.app /Applications/
 open /Applications/KelvinShift.app
 ```
 
-`build.sh` runs `swift build -c release`, creates the `.app` bundle, generates Info.plist, ad-hoc codesigns, and produces a release-ready `.zip`.
+`build.sh` runs `swift build -c release`, creates the `.app` bundle, generates Info.plist, Developer ID signs with the hardened runtime, notarizes via `notarytool` (keychain profile, override with `KS_SIGN_ID` / `KS_NOTARY_PROFILE`), staples the ticket, and produces a release-ready `KelvinShift.zip`. `--no-notarize` skips the Apple round trip; a missing certificate falls back to ad-hoc signing.
 
 Uninstall:
 ```bash
