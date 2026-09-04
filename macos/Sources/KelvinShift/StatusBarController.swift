@@ -7,6 +7,7 @@ final class StatusBarController {
     private let statusItem: NSStatusItem
     private let engine: ScheduleEngine
     private var prefsWC: PreferencesWindowController?
+    private var lastRenderedKey: String?
 
     // Dynamic menu items
     private var miCurrent:  NSMenuItem!
@@ -29,6 +30,10 @@ final class StatusBarController {
         // icon — and its neighbours — jump around.
         statusItem.autosaveName = Self.autosaveName
         statusItem.behavior = []
+        // Set once. Re-assigning length on every tick makes AppKit re-lay-out the item,
+        // and an item with no remembered position gets re-placed when that happens —
+        // which is what was relocating the icon and sliding its neighbours sideways.
+        statusItem.length = Self.canvasSize.width
 
         if let button = statusItem.button {
             button.title = ""
@@ -99,10 +104,17 @@ final class StatusBarController {
         if let btn = statusItem.button {
             let symbol = s.enabled ? phaseSymbol(s.phase) : "power.circle"
             let text = s.enabled ? "\(s.currentKelvin)K" : "Off"
-            let image = Self.renderReadout(symbol: symbol, text: text)
-            btn.image = image
-            btn.setAccessibilityValue(s.enabled ? "\(s.currentKelvin) kelvin" : "Off")
-            statusItem.length = Self.canvasSize.width   // constant for the process
+
+            // Touch the button only when the readout actually changes. The schedule
+            // ticks every 15 seconds and usually renders the same thing; assigning an
+            // identical image each time still triggers a re-layout, and a re-layout
+            // moves an item that has no remembered position.
+            let key = "\(symbol)|\(text)"
+            if key != lastRenderedKey {
+                lastRenderedKey = key
+                btn.image = Self.renderReadout(symbol: symbol, text: text)
+                btn.setAccessibilityValue(s.enabled ? "\(s.currentKelvin) kelvin" : "Off")
+            }
         }
 
         // ── Drop-down items ────────────────────────────
