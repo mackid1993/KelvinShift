@@ -27,12 +27,12 @@ final class StatusBarController {
         // records on it in turn. It is set once and never changed. The readout is drawn
         // into the image instead of the button title, because a title that changes with
         // temperature re-derives the item's identity on every ramp step and makes the
-        // icon — and its neighbours — jump around.
+        // icon — and its neighbors — jump around.
         statusItem.autosaveName = Self.autosaveName
         statusItem.behavior = []
         // Set once. Re-assigning length on every tick makes AppKit re-lay-out the item,
         // and an item with no remembered position gets re-placed when that happens —
-        // which is what was relocating the icon and sliding its neighbours sideways.
+        // which is what was relocating the icon and sliding its neighbors sideways.
         statusItem.length = Self.canvasSize.width
 
         if let button = statusItem.button {
@@ -151,6 +151,24 @@ final class StatusBarController {
     private static let readoutFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
     private static let glyphGap: CGFloat = 3
 
+    /// Breathing room on each side of the drawn content.
+    ///
+    /// `NSStatusItem.variableLength` supplies this inset itself, and that is what the
+    /// item had before it moved to an explicit length. An explicit length replaces the
+    /// inset with nothing, so the glyph and the reading sat flush against the item's
+    /// edges and collided with whatever the user had placed either side once menu bar
+    /// spacing was turned down. A lone item should present the same edge contract as
+    /// every system item, so the inset is drawn back into the canvas.
+    ///
+    /// A dense cluster of sibling items wants the opposite — zero, so the group reads as
+    /// contiguous. That is not this app: KelvinShift is one standalone item. Do not
+    /// flatten this to zero.
+    private static let edgeInset: CGFloat = 8
+
+    /// Item widths land on a two-point grid so fractional text metrics cannot leave the
+    /// canvas on a half point, which blurs the content on a 2x backing store.
+    private static let widthStep: CGFloat = 2
+
     private static func glyph(_ name: String) -> NSImage? {
         NSImage(systemSymbolName: name, accessibilityDescription: nil)?
             .withSymbolConfiguration(symbolConfig)
@@ -158,14 +176,18 @@ final class StatusBarController {
 
     /// One fixed canvas for the life of the process. A glyph and a reading that each
     /// change width would resize the status item on every phase change and ramp step,
-    /// shoving every icon to its left. Sizing for the worst case makes the footprint
-    /// constant, so the item never moves and never moves anything else.
+    /// shoving every icon to its left. Sizing for the worst case — the widest glyph, the
+    /// widest reading, and `edgeInset` on both sides — makes the footprint constant, so
+    /// the item never moves and never moves anything else.
+    ///
+    /// The widest reading is four digits: every Kelvin setting is clamped to 1000–6500.
     private static let canvasSize: NSSize = {
         let widestGlyph = allSymbols.compactMap { glyph($0)?.size.width }.max() ?? 0
         let widestText = ("8888K" as NSString)
             .size(withAttributes: [.font: readoutFont]).width
+        let content = edgeInset * 2 + widestGlyph + glyphGap + widestText
         return NSSize(
-            width: ceil(widestGlyph + glyphGap + widestText),
+            width: max(widthStep, (content / widthStep).rounded(.up) * widthStep),
             height: NSStatusBar.system.thickness
         )
     }()
@@ -181,13 +203,14 @@ final class StatusBarController {
         let mark = glyph(symbol)
         let markSize = mark?.size ?? .zero
 
-        // Glyph pinned left, reading right-aligned in the remaining space, so a shorter
-        // reading ("Off") does not slide the glyph or resize the canvas.
+        // Glyph pinned to the leading inset, reading right-aligned against the trailing
+        // one, so a shorter reading ("Off") does not slide the glyph or resize the
+        // canvas, and neither one ever touches the item's edge.
         let image = NSImage(size: canvasSize)
         image.lockFocus()
         mark?.draw(
             in: NSRect(
-                x: 0,
+                x: edgeInset,
                 y: ((canvasSize.height - markSize.height) / 2).rounded(),
                 width: markSize.width,
                 height: markSize.height
@@ -195,7 +218,7 @@ final class StatusBarController {
         )
         attributed.draw(
             at: NSPoint(
-                x: canvasSize.width - textSize.width,
+                x: canvasSize.width - edgeInset - textSize.width,
                 y: ((canvasSize.height - textSize.height) / 2).rounded()
             )
         )
