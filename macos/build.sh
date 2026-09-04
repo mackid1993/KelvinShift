@@ -17,7 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-VERSION="3.0.3"
+VERSION="3.0.4"
 # Resolve the signing identity from the login keychain rather than hardcoding
 # it, so this script carries no account details.
 SIGN_ID="${KS_SIGN_ID:-$(security find-identity -v -p codesigning \
