@@ -20,6 +20,12 @@ final class StatusBarController {
     init(engine: ScheduleEngine) {
         self.engine = engine
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        // The status item's title tracks the current temperature, and AppKit derives the
+        // position autosave key from the title when no explicit name is set. That minted a
+        // fresh identity on every ramp step (" 2700K", " 2638K", " 2460K", ...), so macOS
+        // never had a remembered position and the icon moved on each update. Pin a stable
+        // name once, before any title is applied, and never change it.
+        self.statusItem.autosaveName = "KelvinShift"
         buildMenu()
         refresh()
 
