@@ -20,12 +20,24 @@ final class StatusBarController {
     init(engine: ScheduleEngine) {
         self.engine = engine
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        // The status item's title tracks the current temperature, and AppKit derives the
-        // position autosave key from the title when no explicit name is set. That minted a
-        // fresh identity on every ramp step (" 2700K", " 2638K", " 2460K", ...), so macOS
-        // never had a remembered position and the icon moved on each update. Pin a stable
-        // name once, before any title is applied, and never change it.
-        self.statusItem.autosaveName = "KelvinShift"
+
+        // Stable identity for the life of the process. macOS 26/27 keys menu bar
+        // position on this, and menu bar managers (Bartender, Thaw) key their own
+        // records on it in turn. It is set once and never changed. The readout is drawn
+        // into the image instead of the button title, because a title that changes with
+        // temperature re-derives the item's identity on every ramp step and makes the
+        // icon — and its neighbours — jump around.
+        statusItem.autosaveName = Self.autosaveName
+        statusItem.behavior = []
+
+        if let button = statusItem.button {
+            button.title = ""
+            button.imagePosition = .imageOnly
+            button.imageScaling = .scaleNone
+            button.setAccessibilityIdentifier(Self.autosaveName)
+            button.setAccessibilityLabel("KelvinShift")
+        }
+
         buildMenu()
         refresh()
 
@@ -82,16 +94,15 @@ final class StatusBarController {
         let s = engine.state
 
         // ── Status bar button ──────────────────────────
+        // Only the image and the accessibility *value* change. title, autosaveName,
+        // accessibilityIdentifier and accessibilityLabel stay exactly as set at creation.
         if let btn = statusItem.button {
-            if !s.enabled {
-                btn.image = symbolImage("power.circle")
-                btn.title = " Off"
-            } else {
-                btn.image = symbolImage(phaseSymbol(s.phase))
-                btn.title = " \(s.currentKelvin)K"
-            }
-            btn.imagePosition = .imageLeading
-            btn.font = NSFont.monospacedDigitSystemFont(ofSize: 0, weight: .regular)
+            let symbol = s.enabled ? phaseSymbol(s.phase) : "power.circle"
+            let text = s.enabled ? "\(s.currentKelvin)K" : "Off"
+            let image = Self.renderReadout(symbol: symbol, text: text)
+            btn.image = image
+            btn.setAccessibilityValue(s.enabled ? "\(s.currentKelvin) kelvin" : "Off")
+            statusItem.length = Self.canvasSize.width   // constant for the process
         }
 
         // ── Drop-down items ────────────────────────────
@@ -115,6 +126,70 @@ final class StatusBarController {
 
         miSchedule.title = scheduleLabel(s)
         miEnabled.state  = s.enabled ? .on : .off
+    }
+
+    /// Unique and permanent. Never derive this from anything that changes.
+    private static let autosaveName = "KelvinShift"
+
+    /// Every symbol the button can ever show. The canvas is sized for the widest of
+    /// them so swapping glyphs cannot change the item's footprint.
+    private static let allSymbols = ["sun.max", "moon", "bed.double", "power.circle"]
+
+    private static let symbolConfig = NSImage.SymbolConfiguration(pointSize: 14, weight: .regular)
+    private static let readoutFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+    private static let glyphGap: CGFloat = 3
+
+    private static func glyph(_ name: String) -> NSImage? {
+        NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(symbolConfig)
+    }
+
+    /// One fixed canvas for the life of the process. A glyph and a reading that each
+    /// change width would resize the status item on every phase change and ramp step,
+    /// shoving every icon to its left. Sizing for the worst case makes the footprint
+    /// constant, so the item never moves and never moves anything else.
+    private static let canvasSize: NSSize = {
+        let widestGlyph = allSymbols.compactMap { glyph($0)?.size.width }.max() ?? 0
+        let widestText = ("8888K" as NSString)
+            .size(withAttributes: [.font: readoutFont]).width
+        return NSSize(
+            width: ceil(widestGlyph + glyphGap + widestText),
+            height: NSStatusBar.system.thickness
+        )
+    }()
+
+    /// Draws the phase symbol and the reading into one template image on the fixed
+    /// canvas, so the button carries no title and never changes size.
+    private static func renderReadout(symbol: String, text: String) -> NSImage {
+        let attributed = NSAttributedString(
+            string: text,
+            attributes: [.font: readoutFont, .foregroundColor: NSColor.black]
+        )
+        let textSize = attributed.size()
+        let mark = glyph(symbol)
+        let markSize = mark?.size ?? .zero
+
+        // Glyph pinned left, reading right-aligned in the remaining space, so a shorter
+        // reading ("Off") does not slide the glyph or resize the canvas.
+        let image = NSImage(size: canvasSize)
+        image.lockFocus()
+        mark?.draw(
+            in: NSRect(
+                x: 0,
+                y: ((canvasSize.height - markSize.height) / 2).rounded(),
+                width: markSize.width,
+                height: markSize.height
+            )
+        )
+        attributed.draw(
+            at: NSPoint(
+                x: canvasSize.width - textSize.width,
+                y: ((canvasSize.height - textSize.height) / 2).rounded()
+            )
+        )
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
     }
 
     private func phaseSymbol(_ p: SchedulePhase) -> String {
