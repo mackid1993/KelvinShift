@@ -151,7 +151,7 @@ final class StatusBarController {
     private static let readoutFont = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
     private static let glyphGap: CGFloat = 3
 
-    /// Breathing room on each side of the drawn content.
+    /// Minimum breathing room before the visible content is centered.
     ///
     /// Every point here is menu bar width taken from other apps, so this is deliberately
     /// small. Measuring the transparent margin other items carry inside their own frames
@@ -211,9 +211,9 @@ final class StatusBarController {
         let mark = glyph(symbol)
         let markSize = mark?.size ?? .zero
 
-        // Glyph centered in its stable-width field, reading trailing-aligned against the
-        // far inset, so a shorter reading ("Off") or a narrower glyph does not slide the
-        // other one or resize the canvas, and neither ever touches the item's edge.
+        // Lay out the fixed fields first, then center their combined visible bounds.
+        // Symbol transparency and text side bearings otherwise make equal nominal
+        // insets look asymmetric. The outer status-item width never changes.
         let image = NSImage(size: canvasSize)
         image.lockFocus()
         mark?.draw(
@@ -231,8 +231,40 @@ final class StatusBarController {
             )
         )
         image.unlockFocus()
-        image.isTemplate = true
-        return image
+        let centered = centerVisibleContent(image)
+        centered.isTemplate = true
+        return centered
+    }
+
+    /// Balance actual ink, including SF Symbol optical margins, rather than image boxes.
+    /// Measure only when the readout changes and translate by whole backing pixels so
+    /// centering cannot blur the glyphs. Odd pixel widths can differ by one pixel.
+    private static func centerVisibleContent(_ image: NSImage) -> NSImage {
+        guard let data = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: data) else { return image }
+
+        var first = bitmap.pixelsWide
+        var last = -1
+        for x in 0..<bitmap.pixelsWide {
+            for y in 0..<bitmap.pixelsHigh {
+                if (bitmap.colorAt(x: x, y: y)?.alphaComponent ?? 0) > 0.05 {
+                    first = min(first, x)
+                    last = x
+                    break
+                }
+            }
+        }
+        guard last >= first else { return image }
+
+        let scale = CGFloat(bitmap.pixelsWide) / image.size.width
+        let shift = ((CGFloat(bitmap.pixelsWide - 1 - last - first)) / 2).rounded() / scale
+        guard shift != 0 else { return image }
+
+        let centered = NSImage(size: image.size)
+        centered.lockFocus()
+        image.draw(at: NSPoint(x: shift, y: 0), from: .zero, operation: .sourceOver, fraction: 1)
+        centered.unlockFocus()
+        return centered
     }
 
     private func phaseSymbol(_ p: SchedulePhase) -> String {
