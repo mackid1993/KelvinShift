@@ -20,36 +20,44 @@ final class StatusBarController {
 
     init(engine: ScheduleEngine) {
         self.engine = engine
-        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-
-        // Stable identity for the life of the process. macOS 26/27 keys menu bar
-        // position on this, and menu bar managers (Bartender, Thaw) key their own
-        // records on it in turn. It is set once and never changed. The readout is drawn
-        // into the image instead of the button title, because a title that changes with
-        // temperature re-derives the item's identity on every ramp step and makes the
-        // icon — and its neighbors — jump around.
-        statusItem.autosaveName = Self.autosaveName
-        statusItem.behavior = []
-        // Set once. Re-assigning length on every tick makes AppKit re-lay-out the item,
-        // and an item with no remembered position gets re-placed when that happens —
-        // which is what was relocating the icon and sliding its neighbors sideways.
-        statusItem.length = Self.canvasSize.width
-
-        if let button = statusItem.button {
-            button.title = ""
-            button.imagePosition = .imageOnly
-            button.imageScaling = .scaleNone
-            button.setAccessibilityIdentifier(Self.autosaveName)
-            button.setAccessibilityLabel("KelvinShift")
-        }
+        self.statusItem = Self.makeStatusItem()
 
         buildMenu()
         refresh()
+
+        // macOS 27 menu bar managers must never observe the temporary Item-0 slot or
+        // variable geometry. Publish only after the permanent identity, menu, initial
+        // rendering, and one fixed length are all in place.
+        statusItem.length = Self.canvasSize.width
+        statusItem.isVisible = true
 
         NotificationCenter.default.addObserver(
             self, selector: #selector(onStateChange),
             name: ScheduleEngine.stateDidChange, object: nil
         )
+    }
+
+    // MARK: – Status item lifecycle
+
+    /// Creates the permanent AppKit slot without publishing a partially configured item.
+    static func makeStatusItem() -> NSStatusItem {
+        let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        statusItem.autosaveName = Self.autosaveName
+        statusItem.behavior = []
+
+        guard let button = statusItem.button else {
+            preconditionFailure("AppKit did not create the KelvinShift status item button")
+        }
+        button.title = ""
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleNone
+        button.setAccessibilityIdentifier(Self.autosaveName)
+        button.setAccessibilityLabel("KelvinShift")
+
+        // Creation is synchronous on the main thread. Hide before returning to the run
+        // loop so MenuBarAgent and third-party managers never observe AppKit's Item-0 slot.
+        statusItem.isVisible = false
+        return statusItem
     }
 
     // MARK: – Menu construction
@@ -202,7 +210,7 @@ final class StatusBarController {
 
     /// Draws the phase symbol and the reading into one template image on the fixed
     /// canvas, so the button carries no title and never changes size.
-    private static func renderReadout(symbol: String, text: String) -> NSImage {
+    static func renderReadout(symbol: String, text: String) -> NSImage {
         let attributed = NSAttributedString(
             string: text,
             attributes: [.font: readoutFont, .foregroundColor: NSColor.black]
@@ -233,6 +241,7 @@ final class StatusBarController {
         image.unlockFocus()
         let centered = centerVisibleContent(image)
         centered.isTemplate = true
+        centered.accessibilityDescription = Self.autosaveName
         return centered
     }
 

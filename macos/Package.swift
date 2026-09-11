@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "KelvinShift",
             path: "Sources/KelvinShift"
+        ),
+        .testTarget(
+            name: "KelvinShiftTests",
+            dependencies: ["KelvinShift"],
+            path: "Tests/KelvinShiftTests"
         )
     ]
 )
